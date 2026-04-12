@@ -163,42 +163,85 @@ def _parse_output(text: str, role: str) -> tuple[dict, str]:
     """Parse LLM output into structured payload and narrative text.
 
     Always returns clean plain-English narrative (no JSON) and a separate structured dict.
+    Handles: valid JSON, truncated JSON, JSON mixed with prose.
     """
     if not text:
         return {}, f"{role} had no response."
 
-    # If the LLM returned JSON despite being told not to, extract the narrative
     stripped = text.strip()
+
+    # Try to extract message_text from JSON (valid or truncated)
     if stripped.startswith("{"):
+        # Try valid JSON first
         try:
             payload = json.loads(stripped)
-            # Extract the human-readable part
-            narrative = (
-                payload.pop("message_text", None)
-                or payload.pop("narrative", None)
-                or payload.pop("thesis_summary", None)
-                or payload.pop("text", None)
-            )
+            narrative = _extract_narrative(payload)
             if narrative:
                 return payload, narrative
-            # No narrative field — build one from the payload
             return payload, _payload_to_narrative(payload, role)
         except json.JSONDecodeError:
             pass
 
-    # If text contains a JSON blob mixed with prose, try to separate them
-    if "{" in stripped:
-        json_start = stripped.index("{")
-        before = stripped[:json_start].strip()
-        try:
-            payload = json.loads(stripped[json_start:])
-            narrative = before or payload.pop("message_text", None) or _payload_to_narrative(payload, role)
-            return payload, narrative
-        except (json.JSONDecodeError, ValueError):
-            pass
+        # Truncated JSON — extract message_text with regex
+        narrative = _extract_message_text_regex(stripped)
+        if narrative:
+            return {}, narrative
 
-    # Plain text — no JSON at all (ideal case)
+        # Last resort — strip everything that looks like JSON
+        return {}, _strip_json_noise(stripped, role)
+
+    # Prose with embedded JSON blob
+    if '{"message_text"' in stripped or '{"' in stripped:
+        json_start = stripped.find("{")
+        before = stripped[:json_start].strip()
+        json_part = stripped[json_start:]
+        try:
+            payload = json.loads(json_part)
+            narrative = before or _extract_narrative(payload) or _payload_to_narrative(payload, role)
+            return payload, narrative
+        except json.JSONDecodeError:
+            narrative = _extract_message_text_regex(json_part)
+            return {}, before + (" " + narrative if narrative else "")
+
+    # Plain text — no JSON (ideal)
     return {}, text
+
+
+def _extract_narrative(payload: dict) -> str | None:
+    """Pull the human-readable text from a structured payload."""
+    for key in ("message_text", "narrative", "thesis_summary", "text"):
+        val = payload.pop(key, None)
+        if val and isinstance(val, str):
+            return val
+    return None
+
+
+def _extract_message_text_regex(text: str) -> str | None:
+    """Extract message_text value from potentially truncated JSON using regex."""
+    import re
+    # Try closed string first
+    match = re.search(r'"message_text"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
+    if match:
+        return match.group(1).replace('\\"', '"').replace('\\n', '\n')
+    # Try unclosed string (truncated JSON)
+    match = re.search(r'"message_text"\s*:\s*"((?:[^"\\]|\\.)+)', text)
+    if match:
+        return match.group(1).replace('\\"', '"').replace('\\n', '\n')
+    return None
+
+
+def _strip_json_noise(text: str, role: str) -> str:
+    """Remove JSON-like content from text, keeping only readable parts."""
+    import re
+    # Remove key-value pairs like "field_name": value
+    cleaned = re.sub(r'"[a-z_]+":\s*(?:"[^"]*"|[\d.]+|\[[^\]]*\]|\{[^}]*\}|true|false|null)', '', text)
+    # Remove leftover braces, brackets, commas
+    cleaned = re.sub(r'[{}\[\],]+', ' ', cleaned)
+    # Collapse whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    if len(cleaned) > 20:
+        return cleaned
+    return f"{role} analysis complete."
 
 
 def _payload_to_narrative(payload: dict, role: str) -> str:

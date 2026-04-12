@@ -1,0 +1,135 @@
+"use client";
+
+import { useState } from "react";
+import { Recommendation, Summary } from "@/lib/types";
+
+type Props = {
+  recommendation?: Recommendation | null;
+  summary?: Summary | null;
+  onApprove: (shares: number) => void;
+  onExecute: () => void;
+  onReject: () => void;
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
+};
+
+const ACTION_TIPS: Record<string, string> = {
+  BUY: "Open or add to a long position", SELL: "Reduce or close a long", SHORT: "Open a short position",
+  COVER: "Close a short position", PASS: "No action — best move is to wait",
+};
+
+export function TradePanel({ recommendation, summary, onApprove, onExecute, onReject }: Props) {
+  const rec = recommendation;
+  const suggestedShares = rec?.position_size_shares ?? rec?.conviction ?? 10;
+  const [shares, setShares] = useState(suggestedShares);
+
+  if (!rec) {
+    return (
+      <div className="panel">
+        <div className="panel-header">Select an event or recommendation</div>
+        <div className="panel-body" style={{ color: "var(--text-muted)", textAlign: "center", padding: 20 }}>
+          Pick an item from the left to see the analysis and trade recommendation.
+        </div>
+      </div>
+    );
+  }
+
+  const action = rec.direction ?? "PASS";
+  const color = ACTION_COLORS[action] ?? "var(--text)";
+  const canApprove = ["awaiting_user_feedback", "awaiting_user_approval"].includes(rec.status);
+  const canExecute = rec.status === "approved";
+  const canReject = ["awaiting_user_feedback", "awaiting_user_approval"].includes(rec.status);
+  const hasSummary = summary?.bull_case || summary?.bear_case;
+
+  return (
+    <div className="panel">
+      <div className="panel-header" style={{ gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span data-tooltip={ACTION_TIPS[action]} style={{ color, fontWeight: 700, fontSize: 14 }}>{action}</span>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{rec.symbol}</span>
+          {rec.conviction != null && (
+            <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 12 }}>Conviction {rec.conviction}/10</span>
+          )}
+        </div>
+        <StatusBadge status={rec.status} />
+      </div>
+
+      <div className="panel-body" style={{ display: "grid", gap: 10 }}>
+        {/* Bull / Bear / Disagreement */}
+        {hasSummary && (
+          <div style={{ display: "grid", gap: 4, fontSize: 12, padding: "8px 10px", background: "var(--bg-panel-soft)", borderRadius: 8 }}>
+            {summary!.bull_case && <div><span style={{ color: "var(--buy)", fontWeight: 600 }}>Bull:</span> {summary!.bull_case}</div>}
+            {summary!.bear_case && <div><span style={{ color: "var(--sell)", fontWeight: 600 }}>Bear:</span> {summary!.bear_case}</div>}
+            {summary!.key_disagreement && <div><span style={{ color: "var(--warn)", fontWeight: 600 }}>Disagreement:</span> {summary!.key_disagreement}</div>}
+          </div>
+        )}
+
+        {/* Thesis */}
+        {rec.thesis && (
+          <div style={{ fontSize: 13, color: "var(--text-soft)", lineHeight: 1.5, borderLeft: "2px solid var(--line)", paddingLeft: 10 }}>
+            {rec.thesis}
+          </div>
+        )}
+
+        {/* Price levels */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          <Level label="Entry" price={rec.entry_price} logic={rec.entry_logic} color="var(--text)" />
+          <Level label="Target" price={rec.target_price} logic={rec.target_logic} color="var(--buy)" />
+          <Level label="Stop" price={rec.stop_price} logic={rec.stop_logic} color="var(--sell)" />
+        </div>
+
+        {/* Buy controls */}
+        {canApprove && action !== "PASS" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 4, borderTop: "1px solid var(--line)" }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Shares</span>
+            <input
+              type="number" value={shares} onChange={(e) => setShares(Number(e.target.value))} min={1}
+              style={{ width: 80, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "center" }}
+            />
+            {rec.entry_price && (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                ~${(shares * rec.entry_price).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {canApprove && <button className="btn btn-accent" onClick={() => onApprove(shares)}>Approve{action !== "PASS" ? ` (${shares} sh)` : ""}</button>}
+          {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute Order</button>}
+          {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Level({ label, price, logic, color }: { label: string; price?: number | null; logic?: string | null; color: string }) {
+  return (
+    <div data-tooltip={logic ?? ""}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color, fontVariantNumeric: "tabular-nums" }}>{price != null ? `$${price.toFixed(2)}` : "\u2014"}</div>
+      {logic && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1, lineHeight: 1.3 }}>{logic}</div>}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    observing: { label: "Observing", cls: "badge-muted" },
+    under_discussion: { label: "Analysing", cls: "badge-accent" },
+    draft_recommendation: { label: "Draft", cls: "badge-accent" },
+    awaiting_user_feedback: { label: "Review", cls: "badge-warn" },
+    awaiting_user_approval: { label: "Approve?", cls: "badge-warn" },
+    approved: { label: "Approved", cls: "badge-accent" },
+    rejected: { label: "Rejected", cls: "badge-danger" },
+    submitted: { label: "Submitted", cls: "badge-accent" },
+    filled: { label: "Filled", cls: "badge-accent" },
+    closed: { label: "Closed", cls: "badge-muted" },
+  };
+  const s = map[status] ?? { label: status, cls: "badge-muted" };
+  return <span className={`badge ${s.cls}`}>{s.label}</span>;
+}

@@ -1,0 +1,119 @@
+"use client";
+
+import { useState } from "react";
+import { EventItem, Recommendation } from "@/lib/types";
+
+type Props = {
+  events: EventItem[];
+  recommendations: Recommendation[];
+  activeSymbol?: string | null;
+  onSelectEvent: (event: EventItem) => void;
+  onSelectRecommendation: (rec: Recommendation) => void;
+};
+
+const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
+
+export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent, onSelectRecommendation }: Props) {
+  const [tab, setTab] = useState<"events" | "recs">("events");
+  const pendingCount = recommendations.filter((r) => PENDING.has(r.status)).length;
+
+  return (
+    <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
+        <TabButton active={tab === "events"} onClick={() => setTab("events")} count={events.length}>
+          Events
+        </TabButton>
+        <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.length} badge={pendingCount || undefined}>
+          Recommendations
+        </TabButton>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
+        {tab === "events" ? (
+          events.length === 0 ? (
+            <Empty>No events yet. Run a scan or trigger a random event.</Empty>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {events.map((ev) => (
+                <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                    <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                      {new Date(ev.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>
+                </InboxItem>
+              ))}
+            </div>
+          )
+        ) : (
+          recommendations.length === 0 ? (
+            <Empty>No recommendations yet.</Empty>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {[...recommendations]
+                .sort((a, b) => (PENDING.has(a.status) ? 0 : 1) - (PENDING.has(b.status) ? 0 : 1))
+                .map((rec) => (
+                  <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong style={{ fontSize: 13 }}>{rec.direction ?? "WATCH"} {rec.symbol}</strong>
+                      <span className={`badge ${PENDING.has(rec.status) ? "badge-warn" : "badge-muted"}`}>
+                        {rec.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>
+                      {rec.thesis ? (rec.thesis.length > 80 ? rec.thesis.slice(0, 80) + "..." : rec.thesis) : rec.strategy_type}
+                    </div>
+                  </InboxItem>
+                ))}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, count, badge, children }: {
+  active: boolean; onClick: () => void; count: number; badge?: number; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1, padding: "10px 12px", background: "transparent", border: "none",
+        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+        color: active ? "var(--text)" : "var(--text-muted)",
+        fontSize: 12, fontWeight: 600, cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}
+    >
+      {children}
+      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>({count})</span>
+      {badge ? <span className="badge badge-warn" style={{ fontSize: 9, padding: "1px 5px" }}>{badge}</span> : null}
+    </button>
+  );
+}
+
+function InboxItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        textAlign: "left", width: "100%", padding: "10px 12px", borderRadius: 8,
+        background: active ? "var(--accent-glow)" : "transparent",
+        border: active ? "1px solid var(--accent-border)" : "1px solid transparent",
+        color: "inherit", cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 16, textAlign: "center" }}>{children}</div>;
+}

@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DeskInbox } from "@/components/layout/DeskInbox";
 import { Header } from "@/components/layout/Header";
+import { InboxTabs } from "@/components/layout/InboxTabs";
+import { TradePanel } from "@/components/trades/TradePanel";
 import { GroupChat } from "@/components/roles/GroupChat";
-import { ActivePositionCard } from "@/components/trades/ActivePositionCard";
-import { RecommendationCard } from "@/components/trades/RecommendationCard";
-import { TraderAvatarPanel } from "@/components/trades/TraderAvatarPanel";
+import { AvatarAndPositions } from "@/components/trades/AvatarAndPositions";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
 import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
@@ -15,172 +14,137 @@ import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatar
 export default function Page() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [activeRecommendation, setActiveRecommendation] = useState<Recommendation | null>(null);
+  const [activeRec, setActiveRec] = useState<Recommendation | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [timeline, setTimeline] = useState<RoleMessage[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [portfolioValue, setPortfolioValue] = useState<number | undefined>();
-  const [mode, setMode] = useState<string>("paper");
+  const [mode, setMode] = useState("paper");
   const [avatarStatus, setAvatarStatus] = useState<TraderAvatarStatus | null>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialRecSet = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didInit = useRef(false);
 
   const load = useCallback(async () => {
-    const [eventData, recData, positionData, portfolioData] = await Promise.all([
+    const [ev, rec, pos, port] = await Promise.all([
       api.events(), api.recs(), api.positions(), api.portfolio(),
     ]);
-    setEvents(eventData.events);
-    setRecommendations(recData.recommendations);
-    setPositions(positionData.positions);
-    setPortfolioValue(Number(portfolioData.portfolio_value ?? 0));
-    setMode(String(portfolioData.status ?? "paper"));
-    if (!initialRecSet.current && recData.recommendations.length > 0) {
-      setActiveRecommendation(recData.recommendations[0]);
-      initialRecSet.current = true;
+    setEvents(ev.events);
+    setRecommendations(rec.recommendations);
+    setPositions(pos.positions);
+    setPortfolioValue(Number(port.portfolio_value ?? 0));
+    setMode(String(port.status ?? "paper"));
+    if (!didInit.current && rec.recommendations.length > 0) {
+      setActiveRec(rec.recommendations[0]);
+      didInit.current = true;
     }
   }, []);
 
   useEffect(() => { load().catch(console.error); }, [load]);
 
-  const activeRecId = activeRecommendation?.id;
+  const activeRecId = activeRec?.id;
   useEffect(() => {
     if (!activeRecId) return;
-    api.rec(activeRecId).then((data) => {
-      setActiveRecommendation(data.recommendation);
-      setSummary(data.summary);
-      setTimeline(data.timeline);
-    }).catch(console.error);
+    api.rec(activeRecId).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
     api.traderAvatarStatus(activeRecId).then(setAvatarStatus).catch(console.error);
   }, [activeRecId]);
 
-  useSSE(streamUrl, useCallback((_type: string, payload: unknown) => {
+  useSSE(streamUrl, useCallback((_: string, payload: unknown) => {
     if (typeof payload === "object" && payload && "recommendation_id" in payload) {
       const p = payload as { recommendation_id?: string };
-      if (p.recommendation_id && p.recommendation_id === activeRecId) {
-        api.rec(p.recommendation_id).then((data) => {
-          setActiveRecommendation(data.recommendation);
-          setSummary(data.summary);
-          setTimeline(data.timeline);
-        }).catch(console.error);
+      if (p.recommendation_id === activeRecId) {
+        api.rec(p.recommendation_id!).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
       }
     }
-    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    refreshTimerRef.current = setTimeout(() => { void load(); }, 500);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void load(), 500);
   }, [activeRecId, load]));
 
-  useEffect(() => () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); }, []);
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
   const sortedTimeline = useMemo(
     () => [...timeline].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
-    [timeline]
+    [timeline],
   );
-
-  const activePosition = useMemo(
-    () => positions.find((p) => p.symbol === activeRecommendation?.symbol) ?? null,
-    [positions, activeRecommendation?.symbol]
-  );
-
-  async function handleScan() { await api.scan(); await load(); }
-
-  async function handleRandomEvent() {
-    const result = await api.randomEvent();
-    setActiveRecommendation(result.recommendation);
-    initialRecSet.current = true;
-    await load();
-  }
-
-  async function handleDeskSend(message: string) {
-    if (!activeRecommendation) return;
-    await api.discuss(activeRecommendation.id, message);
-    const data = await api.rec(activeRecommendation.id);
-    setActiveRecommendation(data.recommendation);
-    setTimeline(data.timeline);
-    setSummary(data.summary);
-  }
-
-  async function handleSell(symbol: string, shares: number) {
-    // Find the trade ID for this symbol from positions
-    const pos = positions.find((p) => p.symbol === symbol);
-    if (!pos?.id) { alert("No open trade found for " + symbol); return; }
-    try {
-      const result = await api.sellTrade(pos.id, shares);
-      alert(`Sold ${result.shares_sold} shares of ${symbol}. P&L: $${result.pnl.toFixed(2)}`);
-      await load();
-    } catch (err) {
-      alert("Sell failed: " + (err instanceof Error ? err.message : "Unknown error"));
-    }
-  }
 
   const hasContent = events.length > 0 || recommendations.length > 0;
 
+  // Handlers
+  async function onScan() { await api.scan(); await load(); }
+  async function onRandom() {
+    const r = await api.randomEvent();
+    setActiveRec(r.recommendation); didInit.current = true; await load();
+  }
+  async function onSend(msg: string) {
+    if (!activeRec) return;
+    await api.discuss(activeRec.id, msg);
+    const d = await api.rec(activeRec.id);
+    setActiveRec(d.recommendation); setTimeline(d.timeline); setSummary(d.summary);
+  }
+  async function onApprove(shares: number) {
+    if (!activeRec) return;
+    await api.approve(activeRec.id, shares); await load();
+  }
+  async function onExecute() { if (activeRec) { await api.execute(activeRec.id); await load(); } }
+  async function onReject() { if (activeRec) { await api.reject(activeRec.id, "User rejected"); await load(); } }
+  async function onSell(symbol: string, shares: number) {
+    const pos = positions.find((p) => p.symbol === symbol);
+    if (!pos?.id) return;
+    const r = await api.sellTrade(pos.id, shares);
+    alert(`Sold ${r.shares_sold} sh of ${symbol}. P&L: $${r.pnl.toFixed(2)}`);
+    await load();
+  }
+
   return (
     <main className="workstation">
-      <Header portfolioValue={portfolioValue} mode={mode} onScan={handleScan} onRandomEvent={handleRandomEvent} />
-
+      <Header portfolioValue={portfolioValue} mode={mode} onScan={onScan} onRandomEvent={onRandom} />
       {!hasContent ? (
-        <EmptyState onScan={handleScan} onRandom={handleRandomEvent} />
+        <EmptyState onScan={onScan} onRandom={onRandom} />
       ) : (
         <div className="workstation-body">
-          {/* Left: Desk Inbox */}
+          {/* LEFT — Tabbed Inbox */}
           <div className="column">
-            <DeskInbox
+            <InboxTabs
               events={events}
               recommendations={recommendations}
-              positions={positions}
-              activeSymbol={activeRecommendation?.symbol}
+              activeSymbol={activeRec?.symbol}
               onSelectEvent={(ev) => {
                 const rec = recommendations.find((r) => r.symbol === ev.symbol) ?? null;
-                setActiveRecommendation(rec);
+                setActiveRec(rec);
               }}
-              onSelectRecommendation={setActiveRecommendation}
-              onSelectPosition={(pos) => {
-                const rec = recommendations.find((r) => r.symbol === pos.symbol) ?? null;
-                if (rec) setActiveRecommendation(rec);
-              }}
+              onSelectRecommendation={setActiveRec}
             />
           </div>
 
-          {/* Center: Conversation */}
+          {/* CENTER — Summary+Buy at top, Chat below */}
           <div className="column">
-            <GroupChat messages={sortedTimeline} onSend={handleDeskSend} activeSymbol={activeRecommendation?.symbol} />
-          </div>
-
-          {/* Right: Trade Desk */}
-          <div className="column">
-            {/* Avatar at top when enabled */}
-            {avatarStatus?.enabled && (
-              <TraderAvatarPanel
-                recommendation={activeRecommendation}
-                avatarStatus={avatarStatus}
-                timeline={sortedTimeline}
-                onStart={async () => {
-                  if (!activeRecommendation) return;
-                  setAvatarStatus(await api.traderAvatarStart(activeRecommendation.id));
-                }}
-                onStop={async () => {
-                  if (!activeRecommendation) return;
-                  await api.traderAvatarStop(activeRecommendation.id);
-                  setAvatarStatus(await api.traderAvatarStatus(activeRecommendation.id));
-                }}
-                onSpeak={async (text) => {
-                  if (!activeRecommendation) return;
-                  await api.traderAvatarSpeak(activeRecommendation.id, text);
-                }}
-              />
-            )}
-
-            {/* Combined Recommendation + Summary */}
-            <RecommendationCard
-              recommendation={activeRecommendation}
+            <TradePanel
+              recommendation={activeRec}
               summary={summary}
-              onReady={async () => activeRecommendation && await api.readyForApproval(activeRecommendation.id).then(load)}
-              onApprove={async (shares) => activeRecommendation && await api.approve(activeRecommendation.id, shares).then(load)}
-              onExecute={async () => activeRecommendation && await api.execute(activeRecommendation.id).then(load)}
-              onReject={async () => activeRecommendation && await api.reject(activeRecommendation.id, "User rejected").then(load)}
+              onApprove={onApprove}
+              onExecute={onExecute}
+              onReject={onReject}
             />
+            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} />
+          </div>
 
-            {/* Active Position with sell controls */}
-            <ActivePositionCard position={activePosition} onSell={handleSell} />
+          {/* RIGHT — Avatar + Positions */}
+          <div className="column">
+            <AvatarAndPositions
+              positions={positions}
+              activeSymbol={activeRec?.symbol}
+              avatarStatus={avatarStatus}
+              recommendation={activeRec}
+              onSell={onSell}
+              onAvatarStart={async () => {
+                if (!activeRec) return;
+                setAvatarStatus(await api.traderAvatarStart(activeRec.id));
+              }}
+              onAvatarStop={async () => {
+                if (!activeRec) return;
+                await api.traderAvatarStop(activeRec.id);
+                setAvatarStatus(await api.traderAvatarStatus(activeRec.id));
+              }}
+            />
           </div>
         </div>
       )}
@@ -191,16 +155,10 @@ export default function Page() {
 function EmptyState({ onScan, onRandom }: { onScan: () => void; onRandom: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: 48 }}>
-      <div style={{
-        width: 64, height: 64, borderRadius: 16,
-        background: "linear-gradient(135deg, var(--accent), #60a5fa)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 28, fontWeight: 700, color: "#fff",
-      }}>W</div>
+      <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, var(--accent), #60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#fff" }}>W</div>
       <div style={{ fontSize: 20, fontWeight: 600 }}>Weekes AATF Trading Workstation</div>
       <div style={{ color: "var(--text-soft)", maxWidth: 480, textAlign: "center", lineHeight: 1.7 }}>
-        Multi-role AI trading desk with Research, Quant Pricing, Risk, and Trader.
-        Each role analyses independently, then the Trader synthesises a recommendation for your approval.
+        AI trading desk with Research, Quant Pricing, Risk, and Trader roles. Start by scanning for earnings or triggering a demo event.
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <button className="btn btn-accent" onClick={onScan}>Run Earnings Scan</button>

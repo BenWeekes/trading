@@ -160,24 +160,64 @@ async def _call_chat_api(client, headers, model, system_text, user_text, role, s
 
 
 def _parse_output(text: str, role: str) -> tuple[dict, str]:
-    """Parse LLM output into structured payload and narrative text."""
+    """Parse LLM output into structured payload and narrative text.
+
+    Always returns clean plain-English narrative (no JSON) and a separate structured dict.
+    """
     if not text:
         return {}, f"{role} had no response."
 
-    # Try JSON first
-    if text.strip().startswith("{"):
+    # If the LLM returned JSON despite being told not to, extract the narrative
+    stripped = text.strip()
+    if stripped.startswith("{"):
         try:
-            payload = json.loads(text)
+            payload = json.loads(stripped)
+            # Extract the human-readable part
             narrative = (
                 payload.pop("message_text", None)
                 or payload.pop("narrative", None)
                 or payload.pop("thesis_summary", None)
                 or payload.pop("text", None)
-                or text[:300]
             )
-            return payload, narrative
+            if narrative:
+                return payload, narrative
+            # No narrative field — build one from the payload
+            return payload, _payload_to_narrative(payload, role)
         except json.JSONDecodeError:
             pass
 
-    # Plain text response
+    # If text contains a JSON blob mixed with prose, try to separate them
+    if "{" in stripped:
+        json_start = stripped.index("{")
+        before = stripped[:json_start].strip()
+        try:
+            payload = json.loads(stripped[json_start:])
+            narrative = before or payload.pop("message_text", None) or _payload_to_narrative(payload, role)
+            return payload, narrative
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Plain text — no JSON at all (ideal case)
     return {}, text
+
+
+def _payload_to_narrative(payload: dict, role: str) -> str:
+    """Convert a structured payload to a readable sentence when the LLM forgot to include message_text."""
+    parts = []
+    if payload.get("final_recommendation"):
+        parts.append(f"{payload['final_recommendation']}.")
+    if payload.get("conviction"):
+        parts.append(f"Conviction {payload['conviction']}/10.")
+    if payload.get("thesis"):
+        parts.append(payload["thesis"])
+    if payload.get("top_risks"):
+        risks = payload["top_risks"]
+        if isinstance(risks, list):
+            parts.append(f"Risks: {', '.join(str(r) for r in risks[:2])}.")
+    if payload.get("fair_value_estimate"):
+        parts.append(f"Fair value {payload['fair_value_estimate']}.")
+    if payload.get("signal_strength"):
+        parts.append(f"Signal {payload['signal_strength']}.")
+    if parts:
+        return " ".join(parts)
+    return f"{role} analysis complete."

@@ -46,6 +46,10 @@ export type TraderAvatarSession = {
   channel: string;
   agent_id: string;
   profile: string;
+  appid: string;
+  token: string;
+  uid: number;
+  agent_uid: string;
   started_at: string;
 };
 

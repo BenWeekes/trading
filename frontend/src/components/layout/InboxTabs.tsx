@@ -19,7 +19,7 @@ const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "dr
 
 export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent, onSelectRecommendation }: Props) {
   const [tab, setTab] = useState<"events" | "recs">("events");
-  const pendingCount = recommendations.filter((r) => PENDING.has(r.status)).length;
+  const pendingCount = recommendations.filter((r) => PENDING.has(r.status) && r.direction && r.direction !== "PASS").length;
 
   // Dedupe events: show only the latest event per symbol
   const deduped = events.reduce<EventItem[]>((acc, ev) => {

@@ -1,6 +1,19 @@
 "use client";
 
 import { useState } from "react";
+// Inline SVG icons matching lucide-react style (avoid npm install issues)
+function MicIcon({ size = 18, ...p }: { size?: number } & React.SVGProps<SVGSVGElement>) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+}
+function MicOffIcon({ size = 18, ...p }: { size?: number } & React.SVGProps<SVGSVGElement>) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 .84"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+}
+function PhoneIcon({ size = 16, ...p }: { size?: number } & React.SVGProps<SVGSVGElement>) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>;
+}
+function PhoneOffIcon({ size = 16, ...p }: { size?: number } & React.SVGProps<SVGSVGElement>) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67"/><path d="M22 2 2 22"/><path d="M8.77 5.7A19.79 19.79 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/></svg>;
+}
 import { Position, Recommendation, TraderAvatarStatus } from "@/lib/types";
 import { useAgoraAvatar } from "@/hooks/useAgoraAvatar";
 
@@ -22,11 +35,8 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
     if (!recommendation || starting) return;
     setStarting(true);
     try {
-      // Phase 1+2: Backend starts agent and returns tokens
       const status = await onAvatarStart();
       if (!status?.session) throw new Error("No session returned");
-
-      // Phase 3: Frontend joins RTC channel for audio/video
       await agora.join({
         appId: status.session.appid,
         channel: status.session.channel,
@@ -50,7 +60,7 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Avatar Panel */}
-      <div className="panel">
+      <div className="panel" style={{ overflow: "hidden" }}>
         <div className="panel-header">
           <span>Trader Avatar</span>
           <span style={{ fontSize: 10, color: isLive ? "var(--accent)" : "var(--text-muted)" }}>
@@ -58,28 +68,28 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
           </span>
         </div>
 
-        {/* Video container */}
+        {/* Video container — explicit height so Agora's 100% child resolves correctly */}
         <div
           ref={agora.videoContainerRef}
           style={{
             background: "#060d18",
-            minHeight: 240,
+            height: 280,
+            minHeight: 280,
             display: isLive && agora.hasVideo ? "block" : "flex",
             alignItems: "center",
             justifyContent: "center",
             position: "relative",
             overflow: "hidden",
-            borderRadius: "0",
           }}
         >
           {!isLive && (
             <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", padding: 24 }}>
-              {starting ? "Starting call..." : "Press Start Call to connect with the trader avatar."}
+              {starting ? "Starting call..." : "Press Start Call to connect."}
             </div>
           )}
           {isLive && !agora.hasVideo && (
             <div style={{ color: "var(--accent)", fontSize: 13, textAlign: "center", padding: 24 }}>
-              {agora.hasAudio ? "Audio connected. Waiting for avatar video..." : "Connecting..."}
+              {agora.hasAudio ? "Audio connected. Waiting for video..." : "Connecting..."}
             </div>
           )}
         </div>
@@ -90,23 +100,47 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
           </div>
         )}
 
-        {/* Controls */}
-        <div style={{ padding: "10px 16px", display: "flex", gap: 8, borderTop: "1px solid var(--line)", justifyContent: "center" }}>
+        {/* Control bar — matching agent-samples style */}
+        <div style={{
+          padding: "12px 16px",
+          borderTop: "1px solid var(--line)",
+          display: "flex",
+          gap: 12,
+          justifyContent: "center",
+          alignItems: "center",
+        }}>
           {!isLive ? (
-            <button className="btn btn-accent" onClick={handleStartCall} disabled={!recommendation || starting}>
+            <button onClick={handleStartCall} disabled={!recommendation || starting} style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 10,
+              background: "var(--accent-glow)", border: "1px solid var(--accent-border)",
+              color: "var(--accent)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+            }}>
+              <PhoneIcon size={16} />
               {starting ? "Starting..." : "Start Call"}
             </button>
           ) : (
             <>
-              <button
-                className={`btn ${agora.muted ? "btn-danger" : ""}`}
-                onClick={agora.toggleMute}
-                title={agora.muted ? "Unmute microphone" : "Mute microphone"}
-                style={{ minWidth: 44, textAlign: "center" }}
-              >
-                {agora.muted ? "\u{1F507}" : "\u{1F3A4}"}
+              {/* Mute button */}
+              <button onClick={agora.toggleMute} title={agora.muted ? "Unmute" : "Mute"} style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 44, height: 44, borderRadius: 10,
+                background: agora.muted ? "rgba(255,122,122,0.15)" : "var(--bg-panel-soft)",
+                border: `1px solid ${agora.muted ? "rgba(255,122,122,0.4)" : "var(--line)"}`,
+                color: agora.muted ? "var(--danger)" : "var(--text)",
+                cursor: "pointer",
+              }}>
+                {agora.muted ? <MicOffIcon size={18} /> : <MicIcon size={18} />}
               </button>
-              <button className="btn btn-danger" onClick={handleEndCall}>
+
+              {/* End call button */}
+              <button onClick={handleEndCall} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "10px 20px", borderRadius: 10,
+                background: "rgba(255,122,122,0.15)", border: "1px solid rgba(255,122,122,0.4)",
+                color: "var(--danger)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}>
+                <PhoneOffIcon size={16} />
                 End Call
               </button>
             </>

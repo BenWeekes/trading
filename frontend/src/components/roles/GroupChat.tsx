@@ -96,11 +96,11 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="panel-header" style={{ flexWrap: "wrap", gap: 6 }}>
         <span>Desk Chat {activeSymbol ? `\u2014 ${activeSymbol}` : ""}</span>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div style={{ display: "flex", gap: 3 }}>
           <FilterChip active={roleFilter === null} onClick={() => setRoleFilter(null)} color="var(--text-soft)">All</FilterChip>
           {ROLES.map((r) => (
             <FilterChip key={r.key} active={roleFilter === r.key} onClick={() => setRoleFilter(roleFilter === r.key ? null : r.key)} color={r.color}>
-              {r.icon}
+              {r.label}
             </FilterChip>
           ))}
         </div>
@@ -200,11 +200,13 @@ function FilterChip({ active, onClick, color, children }: { active: boolean; onC
     <button
       onClick={onClick}
       style={{
-        padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-        border: `1px solid ${active ? color : "transparent"}`,
+        padding: "3px 0", borderRadius: 6, fontSize: 10, fontWeight: 600,
+        width: 58, textAlign: "center",
+        border: `1px solid ${active ? color : "var(--line)"}`,
         background: active ? "rgba(255,255,255,0.06)" : "transparent",
         color: active ? color : "var(--text-muted)",
         cursor: "pointer",
+        letterSpacing: "0.02em",
       }}
     >
       {children}

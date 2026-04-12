@@ -83,7 +83,7 @@ async def _call_responses_api(client, headers, model, system_text, user_text, ro
         "model": model,
         "instructions": system_text,
         "input": user_text,
-        "max_output_tokens": 300,
+        "max_output_tokens": 200,
     }
     if schema:
         payload["text"] = {
@@ -131,7 +131,7 @@ async def _call_chat_api(client, headers, model, system_text, user_text, role, s
             {"role": "system", "content": system_text},
             {"role": "user", "content": user_text},
         ],
-        "max_tokens": 300,
+        "max_tokens": 200,
         "temperature": 0.7,
     }
     if schema:

@@ -118,11 +118,19 @@ async def _scan_from_logs_or_mock() -> dict:
         {"symbol": "PLTR", "date": "2026-04-12", "actual_eps": "0.11", "estimated_eps": "0.09", "surprise_pct": "22.2"},
         {"symbol": "AAPL", "date": "2026-04-12", "actual_eps": "1.65", "estimated_eps": "1.48", "surprise_pct": "11.5"},
     ]
-    # Merge: use CSV data + fill in any missing symbols from mock
-    existing_symbols = {row.get("symbol") for row in earnings}
+    # Dedupe CSV rows by symbol (keep first), then merge mock data
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for row in earnings:
+        sym = row.get("symbol")
+        if sym and sym not in seen:
+            seen.add(sym)
+            deduped.append(row)
     for mock in mock_earnings:
-        if mock["symbol"] not in existing_symbols:
-            earnings.append(mock)
+        if mock["symbol"] not in seen:
+            seen.add(mock["symbol"])
+            deduped.append(mock)
+    earnings = deduped
     results = []
     for row in earnings[:10]:
         symbol = row.get("symbol")

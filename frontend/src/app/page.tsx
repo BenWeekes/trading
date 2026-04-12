@@ -99,9 +99,16 @@ export default function Page() {
   }
 
   async function handleSell(symbol: string, shares: number) {
-    // TODO: Wire to backend sell/close endpoint
-    console.log(`Sell ${shares} shares of ${symbol}`);
-    alert(`Sell ${shares} shares of ${symbol} — backend endpoint not yet implemented`);
+    // Find the trade ID for this symbol from positions
+    const pos = positions.find((p) => p.symbol === symbol);
+    if (!pos?.id) { alert("No open trade found for " + symbol); return; }
+    try {
+      const result = await api.sellTrade(pos.id, shares);
+      alert(`Sold ${result.shares_sold} shares of ${symbol}. P&L: $${result.pnl.toFixed(2)}`);
+      await load();
+    } catch (err) {
+      alert("Sell failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    }
   }
 
   const hasContent = events.length > 0 || recommendations.length > 0;

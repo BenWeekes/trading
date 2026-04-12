@@ -71,10 +71,19 @@ async def approve(recommendation_id: str, payload: dict):
     recommendation = get_recommendation(recommendation_id)
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    # Allow approve from awaiting_user_feedback (skip the ready step) or awaiting_user_approval
+    if recommendation["status"] == "awaiting_user_feedback":
+        ensure_transition(recommendation["status"], "awaiting_user_approval")
+        recommendation["status"] = "awaiting_user_approval"
     ensure_transition(recommendation["status"], "approved")
     now = utcnow_iso()
     recommendation["status"] = "approved"
     recommendation["updated_at"] = now
+    # Apply user-edited shares if provided
+    if payload.get("shares"):
+        recommendation["position_size_shares"] = float(payload["shares"])
+        if recommendation.get("entry_price"):
+            recommendation["position_size_dollars"] = float(payload["shares"]) * float(recommendation["entry_price"])
     upsert_recommendation(recommendation)
     insert_approval(
         {
@@ -109,6 +118,10 @@ async def reject(recommendation_id: str, payload: dict):
     recommendation = get_recommendation(recommendation_id)
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    # Allow reject from awaiting_user_feedback (skip the ready step)
+    if recommendation["status"] == "awaiting_user_feedback":
+        ensure_transition(recommendation["status"], "awaiting_user_approval")
+        recommendation["status"] = "awaiting_user_approval"
     ensure_transition(recommendation["status"], "rejected")
     now = utcnow_iso()
     recommendation["status"] = "rejected"

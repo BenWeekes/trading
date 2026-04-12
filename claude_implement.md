@@ -193,13 +193,77 @@ Performed 4 rounds of comparative review:
 
 ---
 
-## Next Steps (Prioritized)
+## Phase 5: LLM + UI Round 2 (Session 2, 2026-04-12)
 
-1. Wire up real LLM provider (OpenAI or Anthropic) so chat responses are meaningful
-2. Fix Approve/Reject flow — auto-transition or combine feedback+approval states in UI
-3. Combine Recommendation + Summary into single card
-4. Add editable amount on Approve (prefilled with suggested size)
-5. Add Sell/Close button on position cards with editable amount
-6. Integrate Agora avatar properly (embed RTC client, not iframe)
-7. Move avatar to top-right as user requested
-8. Position list below avatar with sell controls
+### Git Commits
+
+1. `166dfdc` — UI overhaul: fix layout, recommendation visibility, and chat polish (8 files)
+2. `58d67e0` — Fix LLM responses, combined rec+summary, @ autocomplete, sell controls (13 files)
+
+Both pushed to https://github.com/BenWeekes/trading
+
+### Backend Changes
+
+**LLM Provider Auto-Detection** (`backend/app/roles/base.py`):
+- Default provider now checks if `OPENAI_API_KEY` is set → uses `"openai"` provider
+- Falls back to `"mock"` only when no key exists
+- Previously hardcoded to `"mock"` always
+
+**OpenAI Provider Rewrite** (`backend/app/adapters/llm/openai_provider.py`):
+- Switched from `/v1/responses` API to standard `/v1/chat/completions` (works with all OpenAI models)
+- Loads system prompts from `roles/prompts/{role}_v1.md` files
+- Builds proper user context: symbol, event headline, role outputs, user message, trader questions
+- Better response parsing: tries JSON first, extracts narrative from known fields
+- Handles both structured and plain text responses
+
+**Role System Prompts** (all 4 rewritten):
+- `research_v1.md` — Beat quality assessment, guidance evaluation, catalyst/counterpoint, confidence scoring
+- `risk_v1.md` — Devil's advocate framing, concrete risk scenarios, sizing discipline
+- `quant_pricing_v1.md` — Price levels, entry/stop/target zones, volatility regime
+- `trader_v1.md` — Synthesis of all roles, decisive recommendations, PASS as valid action
+
+### Frontend Changes
+
+**RecommendationCard** — Combined with SharedSummary into single card:
+- Bull/Bear/Disagreement shown inline as colored summary block
+- Conviction bar (10-segment visual indicator, color-coded by level)
+- Editable share count input for approval (prefilled with suggested position size)
+- Shows estimated dollar value (shares × entry price)
+- Approve button shows share count: "Approve (15 sh)"
+- Action colors: BUY=green, SELL=red, SHORT=amber, COVER=accent, PASS=muted
+- Status badges per state (Observing, Roles Analysing, Review & Discuss, etc.)
+- data-tooltip on action labels with definitions
+
+**GroupChat** — @ autocomplete:
+- Typing `@` shows dropdown with 4 roles (Research, Risk, Quant, Trader)
+- Filtered as you type (`@r` → Research/Risk, `@q` → Quant)
+- Click or select to insert `@role_name ` into input
+- Role icons and colors on each dropdown option
+- Dropdown positioned above input, closes on selection or when @ removed
+
+**ActivePositionCard** — Sell controls:
+- Editable share amount input (prefilled with total position size, capped at max)
+- "Sell N sh" button
+- "Sell All" shortcut button (when selling less than total)
+- Entry/Current/Shares grid with P&L colored green/red
+
+**page.tsx** — Layout updates:
+- Avatar panel at top of right column (when enabled)
+- Combined RecommendationCard+Summary below avatar
+- ActivePositionCard with sell handler at bottom
+- Removed standalone SharedSummary from center column
+- `api.approve()` now accepts optional shares parameter
+
+**Types** — Added `position_size_shares` and `position_size_dollars` to Recommendation type
+
+---
+
+## Remaining Issues
+
+1. **Agora avatar integration** — Current approach uses iframe which won't work for real calls. Need to embed the Agora RTC/RTM client directly (see agora-agent-samples react-video-client-avatar for reference). The simple-backend must be running on port 8082 with proper credentials.
+
+2. **Sell endpoint not implemented** — Frontend has sell buttons wired but backend has no `/api/trades/{id}/close` or sell endpoint yet. Currently shows an alert.
+
+3. **Approve passes shares to backend but backend ignores them** — The `/api/recs/{id}/approve` route accepts `{ shares }` but doesn't update `position_size_shares` on the recommendation. Need to update the approve handler.
+
+4. **State machine flow for users** — After analysis, rec goes to `awaiting_user_feedback`. User must click "Ready for Approval" to move to `awaiting_user_approval` before Approve button appears. This is correct per plan but may feel like an extra click. Consider auto-transitioning on first trader chat reply.

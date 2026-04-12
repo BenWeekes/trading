@@ -59,8 +59,7 @@ export function RecommendationCard({ recommendation, summary, onReady, onApprove
   const action = recommendation.direction ?? "PASS";
   const actionColor = ACTION_COLORS[action] ?? "var(--text)";
   const status = STATUS_MAP[recommendation.status] ?? { label: recommendation.status, cls: "badge-muted" };
-  const canReady = recommendation.status === "awaiting_user_feedback";
-  const canApprove = recommendation.status === "awaiting_user_approval";
+  const canApprove = ["awaiting_user_feedback", "awaiting_user_approval"].includes(recommendation.status);
   const canExecute = recommendation.status === "approved";
   const canReject = ["awaiting_user_feedback", "awaiting_user_approval"].includes(recommendation.status);
   const hasSummary = summary?.bull_case || summary?.bear_case;
@@ -114,7 +113,7 @@ export function RecommendationCard({ recommendation, summary, onReady, onApprove
         </div>
 
         {/* Editable shares for approval */}
-        {(canApprove || canReady) && action !== "PASS" && (
+        {canApprove && action !== "PASS" && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Shares</span>
             <input
@@ -139,7 +138,6 @@ export function RecommendationCard({ recommendation, summary, onReady, onApprove
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {canReady && <button className="btn btn-accent" onClick={onReady}>Ready for Approval</button>}
           {canApprove && <button className="btn btn-accent" onClick={() => onApprove(editShares)}>Approve ({editShares} sh)</button>}
           {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute Order</button>}
           {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}

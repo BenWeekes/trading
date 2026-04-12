@@ -54,6 +54,10 @@ export const api = {
       body: JSON.stringify({ recommendation_id: recommendationId }),
     }),
   positions: () => fetchJson<{ positions: Position[] }>("/positions"),
+  sellTrade: (tradeId: string, shares: number) =>
+    fetchJson<{ trade: unknown; pnl: number; shares_sold: number }>(`/trades/${tradeId}/sell`, {
+      method: "POST", body: JSON.stringify({ shares }),
+    }),
   portfolio: () => fetchJson<Record<string, unknown>>("/portfolio"),
 };
 

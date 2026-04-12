@@ -175,7 +175,7 @@ function EmptyState({ onScan, onRandom }: { onScan: () => void; onRandom: () => 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: 48 }}>
       <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, var(--accent), #60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#fff" }}>W</div>
-      <div style={{ fontSize: 20, fontWeight: 600 }}>Weekes AATF Trading Workstation</div>
+      <div style={{ fontSize: 20, fontWeight: 600 }}>AI Trading Platform</div>
       <div style={{ color: "var(--text-soft)", maxWidth: 480, textAlign: "center", lineHeight: 1.7 }}>
         AI trading desk with Research, Quant Pricing, Risk, and Trader roles. Start by scanning for earnings or triggering a demo event.
       </div>

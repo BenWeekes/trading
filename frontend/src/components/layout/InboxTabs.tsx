@@ -79,8 +79,8 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
                   <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <strong style={{ fontSize: 13 }}>{rec.direction ?? "WATCH"} {rec.symbol}</strong>
-                      <span className={`badge ${PENDING.has(rec.status) ? "badge-warn" : "badge-muted"}`}>
-                        {rec.status.replace(/_/g, " ")}
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                        {rec.conviction ? `${rec.conviction}/10` : ""}
                       </span>
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>

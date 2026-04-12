@@ -8,64 +8,115 @@ type Props = {
   onReject: () => void;
 };
 
-const TOOLTIP_TEXT: Record<string, string> = {
-  BUY: "BUY opens or adds to a long position.",
-  SELL: "SELL reduces or closes an existing long position.",
-  SHORT: "SHORT opens or adds to a short position.",
-  COVER: "COVER reduces or closes a short position.",
-  PASS: "PASS means no trade should be taken now.",
+const ACTION_TOOLTIPS: Record<string, string> = {
+  BUY: "Open or add to a long position",
+  SELL: "Reduce or close an existing long position",
+  SHORT: "Open or add to a short position",
+  COVER: "Reduce or close a short position",
+  PASS: "No trade — the best action is no action right now",
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  BUY: "var(--buy)",
+  SELL: "var(--sell)",
+  SHORT: "var(--warn)",
+  COVER: "var(--accent)",
+  PASS: "var(--text-muted)",
+};
+
+const STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  observing: { label: "Observing", className: "badge-muted" },
+  under_discussion: { label: "Discussing", className: "badge-accent" },
+  draft_recommendation: { label: "Draft", className: "badge-accent" },
+  awaiting_user_feedback: { label: "Review & Discuss", className: "badge-warn" },
+  awaiting_user_approval: { label: "Ready for Approval", className: "badge-warn" },
+  approved: { label: "Approved", className: "badge-accent" },
+  rejected: { label: "Rejected", className: "badge-danger" },
+  submitted: { label: "Submitted", className: "badge-accent" },
+  filled: { label: "Filled", className: "badge-accent" },
+  closed: { label: "Closed", className: "badge-muted" },
 };
 
 export function RecommendationCard({ recommendation, onReady, onApprove, onExecute, onReject }: Props) {
   if (!recommendation) {
     return (
-      <section style={{ border: "1px solid var(--line)", borderRadius: 20, background: "var(--bg-panel)", padding: 16 }}>
-        No active recommendation selected.
-      </section>
+      <div className="panel">
+        <div className="panel-header">Recommendation</div>
+        <div className="panel-body" style={{ color: "var(--text-muted)", padding: 24, textAlign: "center" }}>
+          Select an event or recommendation from the inbox to see details here.
+        </div>
+      </div>
     );
   }
 
   const action = recommendation.direction ?? "PASS";
+  const actionColor = ACTION_COLORS[action] ?? "var(--text)";
+  const status = STATUS_LABELS[recommendation.status] ?? { label: recommendation.status, className: "badge-muted" };
   const canReady = recommendation.status === "awaiting_user_feedback";
   const canApprove = recommendation.status === "awaiting_user_approval";
   const canExecute = recommendation.status === "approved";
-  const canReject = recommendation.status === "awaiting_user_feedback" || recommendation.status === "awaiting_user_approval";
+  const canReject = ["awaiting_user_feedback", "awaiting_user_approval"].includes(recommendation.status);
+
   return (
-    <section style={{ border: "1px solid var(--line)", borderRadius: 20, background: "var(--bg-panel)", padding: 18, display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <strong style={{ fontSize: 20 }}>{action} {recommendation.symbol}</strong>
-        <span title={TOOLTIP_TEXT[action]} style={{ color: "var(--text-soft)", fontSize: 12, cursor: "help" }}>
-          {action}
-        </span>
+    <div className="panel">
+      <div className="panel-header">
+        <span>Recommendation</span>
+        <span className={`badge ${status.className}`}>{status.label}</span>
       </div>
-      <div>{recommendation.thesis ?? "No thesis yet."}</div>
-      <div style={{ display: "grid", gap: 8, fontSize: 14 }}>
-        <div title={recommendation.entry_logic ?? ""}>Entry: {recommendation.entry_price ?? "-"} </div>
-        <div title={recommendation.stop_logic ?? ""}>Stop: {recommendation.stop_price ?? "-"} </div>
-        <div title={recommendation.target_logic ?? ""}>Target: {recommendation.target_price ?? "-"} </div>
-        <div>Conviction: {recommendation.conviction ?? "-"}/10</div>
-        <div>Status: {recommendation.status}</div>
+      <div className="panel-body" style={{ display: "grid", gap: 14 }}>
+        {/* Action + Symbol */}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span
+            data-tooltip={ACTION_TOOLTIPS[action]}
+            style={{ fontSize: 22, fontWeight: 700, color: actionColor }}
+          >
+            {action}
+          </span>
+          <span style={{ fontSize: 22, fontWeight: 700 }}>{recommendation.symbol}</span>
+          {recommendation.conviction != null && (
+            <span style={{ fontSize: 13, color: "var(--text-soft)", marginLeft: "auto" }}>
+              Conviction {recommendation.conviction}/10
+            </span>
+          )}
+        </div>
+
+        {/* Thesis */}
+        {recommendation.thesis && (
+          <div style={{ fontSize: 13, color: "var(--text-soft)", lineHeight: 1.6, borderLeft: "2px solid var(--line)", paddingLeft: 12 }}>
+            {recommendation.thesis}
+          </div>
+        )}
+
+        {/* Price levels */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <PriceLevel label="Entry" price={recommendation.entry_price} logic={recommendation.entry_logic} color="var(--text)" />
+          <PriceLevel label="Target" price={recommendation.target_price} logic={recommendation.target_logic} color="var(--buy)" />
+          <PriceLevel label="Stop" price={recommendation.stop_price} logic={recommendation.stop_logic} color="var(--sell)" />
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", paddingTop: 4 }}>
+          {canReady && <button className="btn btn-accent" onClick={onReady}>Ready for Approval</button>}
+          {canApprove && <button className="btn btn-accent" onClick={onApprove}>Approve</button>}
+          {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute</button>}
+          {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}
+          {!canReady && !canApprove && !canExecute && !canReject && (
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>No actions available in this state.</span>
+          )}
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {canReady ? (
-          <button onClick={onReady} style={buttonStyle("var(--accent)")}>Ready for Approval</button>
-        ) : null}
-        <button onClick={onApprove} disabled={!canApprove} style={buttonStyle("var(--accent)", !canApprove)}>Approve</button>
-        <button onClick={onExecute} disabled={!canExecute} style={buttonStyle("var(--warn)", !canExecute)}>Execute</button>
-        <button onClick={onReject} disabled={!canReject} style={buttonStyle("var(--danger)", !canReject)}>Reject</button>
-      </div>
-    </section>
+    </div>
   );
 }
 
-function buttonStyle(color: string, disabled = false) {
-  return {
-    border: `1px solid ${color}`,
-    background: "transparent",
-    color,
-    borderRadius: 12,
-    padding: "10px 14px",
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.45 : 1,
-  } as const;
+function PriceLevel({ label, price, logic, color }: { label: string; price?: number | null; logic?: string | null; color: string }) {
+  return (
+    <div data-tooltip={logic ?? ""}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color, fontVariantNumeric: "tabular-nums" }}>
+        {price != null ? `$${price.toFixed(2)}` : "—"}
+      </div>
+      {logic && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>{logic}</div>}
+    </div>
+  );
 }

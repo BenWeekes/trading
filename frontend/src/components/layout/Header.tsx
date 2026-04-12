@@ -1,45 +1,46 @@
 type Props = {
   portfolioValue?: number;
   mode?: string;
+  onScan?: () => void;
+  onRandomEvent?: () => void;
 };
 
-export function Header({ portfolioValue, mode }: Props) {
+export function Header({ portfolioValue, mode, onScan, onRandomEvent }: Props) {
   return (
-    <header
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "20px 28px",
-        borderBottom: "1px solid var(--line)",
-      }}
-    >
-      <div>
-        <div style={{ fontSize: 12, letterSpacing: "0.14em", color: "var(--text-soft)", textTransform: "uppercase" }}>
-          Weekes AATF
+    <header style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      padding: "14px 20px", borderBottom: "1px solid var(--line)",
+      background: "linear-gradient(180deg, rgba(15, 25, 40, 0.95), rgba(8, 17, 31, 0.95))",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 8,
+          background: "linear-gradient(135deg, var(--accent), #60a5fa)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontWeight: 700, fontSize: 15, color: "#fff",
+        }}>W</div>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Weekes AATF</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>AI Trading Workstation</div>
         </div>
-        <div style={{ fontSize: 28, fontWeight: 700 }}>Trading Workstation</div>
       </div>
-      <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        {onScan && <button className="btn" onClick={onScan}>Scan</button>}
+        {onRandomEvent && <button className="btn" onClick={onRandomEvent}>Random Event</button>}
+
+        <div style={{ height: 20, width: 1, background: "var(--line)", margin: "0 4px" }} />
+
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 12, color: "var(--text-soft)", textTransform: "uppercase" }}>Portfolio</div>
-          <div style={{ fontSize: 24, fontWeight: 700 }}>
-            {typeof portfolioValue === "number" ? `$${portfolioValue.toLocaleString()}` : "Loading"}
+          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Portfolio</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+            {typeof portfolioValue === "number" ? `$${portfolioValue.toLocaleString()}` : "..."}
           </div>
         </div>
-        <div
-          style={{
-            padding: "10px 12px",
-            borderRadius: 999,
-            border: "1px solid var(--line)",
-            background: "rgba(113, 217, 182, 0.08)",
-            color: "var(--accent)",
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
+
+        <span className="badge badge-accent" style={{ fontSize: 11, padding: "4px 10px" }}>
           {mode?.toUpperCase() ?? "PAPER"}
-        </div>
+        </span>
       </div>
     </header>
   );

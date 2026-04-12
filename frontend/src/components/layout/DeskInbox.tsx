@@ -1,5 +1,4 @@
 import { ReactNode } from "react";
-
 import { EventItem, Position, Recommendation } from "@/lib/types";
 
 type Props = {
@@ -12,140 +11,137 @@ type Props = {
   onSelectPosition: (position: Position) => void;
 };
 
+const PENDING_STATUSES = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
+
 export function DeskInbox({
-  events,
-  recommendations,
-  positions,
-  activeSymbol,
-  onSelectEvent,
-  onSelectRecommendation,
-  onSelectPosition,
+  events, recommendations, positions, activeSymbol,
+  onSelectEvent, onSelectRecommendation, onSelectPosition,
 }: Props) {
+  const pendingCount = recommendations.filter((r) => PENDING_STATUSES.has(r.status)).length;
+
   return (
-    <section
-      style={{
-        border: "1px solid var(--line)",
-        borderRadius: 20,
-        background: "var(--bg-panel)",
-        padding: 16,
-        display: "grid",
-        gap: 16,
-        minHeight: 0,
-      }}
-    >
-      <InboxSection
-        title="News and Events"
-        empty="No events yet."
-        items={events}
-        renderItem={(event) => (
-          <InboxButton
-            key={event.id}
-            active={Boolean(event.symbol && event.symbol === activeSymbol)}
-            title={event.symbol ?? event.type.toUpperCase()}
-            subtitle={event.headline}
-            meta={new Date(event.timestamp).toLocaleTimeString()}
-            detail={event.body_excerpt ?? event.source ?? ""}
-            onClick={() => onSelectEvent(event)}
-          />
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Events */}
+      <InboxSection title="Events" count={events.length} maxHeight={240}>
+        {events.length === 0 ? (
+          <Empty>No events yet.</Empty>
+        ) : (
+          events.map((ev) => (
+            <InboxItem
+              key={ev.id}
+              active={Boolean(ev.symbol && ev.symbol === activeSymbol)}
+              onClick={() => onSelectEvent(ev)}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>
+                <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{new Date(ev.timestamp).toLocaleTimeString()}</span>
+              </div>
+              <div style={{ fontSize: 12, marginTop: 2 }}>{ev.headline}</div>
+            </InboxItem>
+          ))
         )}
-      />
+      </InboxSection>
 
-      <InboxSection
-        title="Recommendations"
-        empty="No recommendations yet."
-        items={recommendations}
-        renderItem={(recommendation) => (
-          <InboxButton
-            key={recommendation.id}
-            active={recommendation.symbol === activeSymbol}
-            title={`${recommendation.direction ?? "WATCH"} ${recommendation.symbol}`}
-            subtitle={recommendation.thesis ?? recommendation.strategy_type}
-            meta={recommendation.status.replace(/_/g, " ")}
-            detail={`Conviction ${recommendation.conviction ?? "-"} / 10`}
-            onClick={() => onSelectRecommendation(recommendation)}
-          />
+      {/* Recommendations */}
+      <InboxSection title="Recommendations" count={recommendations.length} badge={pendingCount > 0 ? `${pendingCount} pending` : undefined} maxHeight={240}>
+        {recommendations.length === 0 ? (
+          <Empty>No recommendations yet.</Empty>
+        ) : (
+          recommendations
+            .sort((a, b) => {
+              const aP = PENDING_STATUSES.has(a.status) ? 0 : 1;
+              const bP = PENDING_STATUSES.has(b.status) ? 0 : 1;
+              return aP - bP;
+            })
+            .map((rec) => (
+              <InboxItem
+                key={rec.id}
+                active={rec.symbol === activeSymbol}
+                onClick={() => onSelectRecommendation(rec)}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <strong style={{ fontSize: 13 }}>{rec.direction ?? "WATCH"} {rec.symbol}</strong>
+                  <span className={`badge ${PENDING_STATUSES.has(rec.status) ? "badge-warn" : "badge-muted"}`}>
+                    {rec.status.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>
+                  {rec.thesis ? (rec.thesis.length > 60 ? rec.thesis.slice(0, 60) + "..." : rec.thesis) : rec.strategy_type}
+                </div>
+              </InboxItem>
+            ))
         )}
-      />
+      </InboxSection>
 
-      <InboxSection
-        title="Open Positions"
-        empty="No open paper positions."
-        items={positions}
-        renderItem={(position) => (
-          <InboxButton
-            key={position.id}
-            active={position.symbol === activeSymbol}
-            title={`${position.direction} ${position.symbol}`}
-            subtitle={`$${Number(position.current_price ?? 0).toFixed(2)} current`}
-            meta={`${position.shares ?? 0} sh`}
-            detail={`PnL ${Number(position.unrealized_pnl ?? 0).toFixed(2)}`}
-            onClick={() => onSelectPosition(position)}
-          />
+      {/* Positions */}
+      <InboxSection title="Open Positions" count={positions.length} maxHeight={180}>
+        {positions.length === 0 ? (
+          <Empty>No open paper positions.</Empty>
+        ) : (
+          positions.map((pos) => (
+            <InboxItem
+              key={pos.id}
+              active={pos.symbol === activeSymbol}
+              onClick={() => onSelectPosition(pos)}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                <strong style={{ fontSize: 13 }}>{pos.symbol}</strong>
+                <span style={{
+                  fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums",
+                  color: (pos.unrealized_pnl ?? 0) >= 0 ? "var(--buy)" : "var(--sell)",
+                }}>
+                  {(pos.unrealized_pnl ?? 0) >= 0 ? "+" : ""}${Number(pos.unrealized_pnl ?? 0).toFixed(2)}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 1 }}>
+                {pos.shares} sh @ ${Number(pos.entry_price ?? 0).toFixed(2)}
+              </div>
+            </InboxItem>
+          ))
         )}
-      />
-    </section>
+      </InboxSection>
+    </div>
   );
 }
 
-function InboxSection<T>({
-  title,
-  items,
-  empty,
-  renderItem,
-}: {
-  title: string;
-  items: T[];
-  empty: string;
-  renderItem: (item: T) => ReactNode;
+function InboxSection({ title, count, badge, maxHeight, children }: {
+  title: string; count: number; badge?: string; maxHeight: number; children: ReactNode;
 }) {
   return (
-    <div style={{ display: "grid", gap: 10, minHeight: 0 }}>
-      <div style={{ fontSize: 12, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-soft)" }}>
-        {title}
+    <div className="panel">
+      <div className="panel-header">
+        <span>{title} <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({count})</span></span>
+        {badge && <span className="badge badge-warn">{badge}</span>}
       </div>
-      <div style={{ display: "grid", gap: 8, maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
-        {items.length === 0 ? <div style={{ color: "var(--text-soft)", fontSize: 14 }}>{empty}</div> : items.map(renderItem)}
+      <div style={{ maxHeight, overflowY: "auto", padding: "8px 8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {children}
+        </div>
       </div>
     </div>
   );
 }
 
-function InboxButton({
-  active,
-  title,
-  subtitle,
-  meta,
-  detail,
-  onClick,
-}: {
-  active: boolean;
-  title: string;
-  subtitle: string;
-  meta: string;
-  detail: string;
-  onClick: () => void;
-}) {
+function InboxItem({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       onClick={onClick}
       style={{
-        textAlign: "left",
-        background: active ? "rgba(113, 217, 182, 0.12)" : "var(--bg-panel-soft)",
-        border: `1px solid ${active ? "rgba(113, 217, 182, 0.45)" : "var(--line)"}`,
-        borderRadius: 16,
-        padding: 14,
-        color: "inherit",
-        cursor: "pointer",
-        display: "grid",
-        gap: 6,
+        textAlign: "left", width: "100%",
+        background: active ? "rgba(113, 217, 182, 0.1)" : "transparent",
+        border: active ? "1px solid rgba(113, 217, 182, 0.3)" : "1px solid transparent",
+        borderRadius: 10, padding: "10px 12px",
+        color: "inherit", cursor: "pointer",
+        transition: "background 0.1s",
       }}
+      onMouseEnter={(e) => { if (!active) (e.currentTarget.style.background = "var(--bg-panel-soft)"); }}
+      onMouseLeave={(e) => { if (!active) (e.currentTarget.style.background = "transparent"); }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-        <strong>{title}</strong>
-        <span style={{ color: "var(--text-soft)", fontSize: 12 }}>{meta}</span>
-      </div>
-      <div style={{ fontSize: 14 }}>{subtitle}</div>
-      <div style={{ color: "var(--text-soft)", fontSize: 12 }}>{detail}</div>
+      {children}
     </button>
   );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "12px 8px" }}>{children}</div>;
 }

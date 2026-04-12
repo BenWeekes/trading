@@ -24,6 +24,7 @@ export default function Page() {
   const [mode, setMode] = useState<string>("paper");
   const [avatarStatus, setAvatarStatus] = useState<TraderAvatarStatus | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialRecSet = useRef(false);
 
   const load = useCallback(async () => {
     const [eventData, recData, positionData, portfolioData] = await Promise.all([
@@ -37,30 +38,34 @@ export default function Page() {
     setPositions(positionData.positions);
     setPortfolioValue(Number(portfolioData.portfolio_value ?? 0));
     setMode(String(portfolioData.status ?? "paper"));
-    setActiveRecommendation((current) => current ?? recData.recommendations[0] ?? null);
+    if (!initialRecSet.current && recData.recommendations.length > 0) {
+      setActiveRecommendation(recData.recommendations[0]);
+      initialRecSet.current = true;
+    }
   }, []);
 
-  useEffect(() => {
-    load().catch(console.error);
-  }, [load]);
+  useEffect(() => { load().catch(console.error); }, [load]);
 
+  // Load detail when active recommendation changes
+  const activeRecId = activeRecommendation?.id;
   useEffect(() => {
-    if (!activeRecommendation) return;
-    api.rec(activeRecommendation.id)
+    if (!activeRecId) return;
+    api.rec(activeRecId)
       .then((data) => {
         setActiveRecommendation(data.recommendation);
         setSummary(data.summary);
         setTimeline(data.timeline);
       })
       .catch(console.error);
-    api.traderAvatarStatus(activeRecommendation.id).then(setAvatarStatus).catch(console.error);
-  }, [activeRecommendation?.id]);
+    api.traderAvatarStatus(activeRecId).then(setAvatarStatus).catch(console.error);
+  }, [activeRecId]);
 
-  useSSE(streamUrl, (_type, payload) => {
-    if (typeof payload === "object" && payload && "recommendation_id" in payload && activeRecommendation) {
+  // Debounced SSE handler
+  useSSE(streamUrl, useCallback((_type: string, payload: unknown) => {
+    if (typeof payload === "object" && payload && "recommendation_id" in payload) {
       const p = payload as { recommendation_id?: string };
-      if (p.recommendation_id === activeRecommendation.id) {
-        api.rec(activeRecommendation.id)
+      if (p.recommendation_id && p.recommendation_id === activeRecId) {
+        api.rec(p.recommendation_id)
           .then((data) => {
             setActiveRecommendation(data.recommendation);
             setSummary(data.summary);
@@ -69,28 +74,21 @@ export default function Page() {
           .catch(console.error);
       }
     }
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-    }
-    refreshTimerRef.current = setTimeout(() => {
-      void load();
-    }, 500);
-  });
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => { void load(); }, 500);
+  }, [activeRecId, load]));
 
   useEffect(() => {
-    return () => {
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-      }
-    };
+    return () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); };
   }, []);
 
   const sortedTimeline = useMemo(
     () => [...timeline].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
     [timeline]
   );
+
   const activePosition = useMemo(
-    () => positions.find((position) => position.symbol === activeRecommendation?.symbol) ?? null,
+    () => positions.find((p) => p.symbol === activeRecommendation?.symbol) ?? null,
     [positions, activeRecommendation?.symbol]
   );
 
@@ -107,85 +105,57 @@ export default function Page() {
     setSummary(data.summary);
   }
 
+  const hasContent = events.length > 0 || recommendations.length > 0;
+
   return (
-    <main style={{ minHeight: "100vh", height: "100vh", overflow: "hidden", display: "grid", gridTemplateRows: "auto 1fr" }}>
-      <Header portfolioValue={portfolioValue} mode={mode} />
-      <div style={{ padding: 24, minHeight: 0, display: "grid", gridTemplateRows: "auto 1fr", gap: 16, overflow: "hidden" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 0 }}>
-          <div style={{ color: "var(--text-soft)" }}>Paper-first local workstation with role-led discussion.</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={handleScan} style={topButtonStyle}>Run Scan</button>
-            <button
-              onClick={async () => {
-                const result = await api.randomEvent();
-                setActiveRecommendation(result.recommendation);
-                await load();
-              }}
-              style={topButtonStyle}
-            >
-              Random Event
-            </button>
-          </div>
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.05fr 1.3fr 1fr",
-            gap: 18,
-            alignItems: "start",
-            minHeight: 0,
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ display: "grid", gap: 14, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
-            <SectionLabel title="Desk Inbox" />
+    <main className="workstation">
+      <Header portfolioValue={portfolioValue} mode={mode} onScan={handleScan} onRandomEvent={async () => {
+        const result = await api.randomEvent();
+        setActiveRecommendation(result.recommendation);
+        initialRecSet.current = true;
+        await load();
+      }} />
+
+      {!hasContent ? (
+        <EmptyState onScan={handleScan} onRandom={async () => {
+          const result = await api.randomEvent();
+          setActiveRecommendation(result.recommendation);
+          initialRecSet.current = true;
+          await load();
+        }} />
+      ) : (
+        <div className="workstation-body">
+          {/* Left: Desk Inbox */}
+          <div className="column">
             <DeskInbox
               events={events}
               recommendations={recommendations}
               positions={positions}
               activeSymbol={activeRecommendation?.symbol}
               onSelectEvent={(event) => {
-                const rec = recommendations.find((item) => item.symbol === event.symbol) ?? null;
+                const rec = recommendations.find((r) => r.symbol === event.symbol) ?? null;
                 setActiveRecommendation(rec);
               }}
-              onSelectRecommendation={(recommendation) => {
-                setActiveRecommendation(recommendation);
-              }}
-              onSelectPosition={(position) => {
-                const rec = recommendations.find((item) => item.symbol === position.symbol) ?? null;
-                if (rec) {
-                  setActiveRecommendation(rec);
-                }
+              onSelectRecommendation={setActiveRecommendation}
+              onSelectPosition={(pos) => {
+                const rec = recommendations.find((r) => r.symbol === pos.symbol) ?? null;
+                if (rec) setActiveRecommendation(rec);
               }}
             />
           </div>
-          <div style={{ display: "grid", gap: 14, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
-            <SectionLabel title="Desk Chat" />
-            <SharedSummary summary={summary} />
-            <GroupChat messages={sortedTimeline} onSend={handleDeskSend} />
-          </div>
-          <div style={{ display: "grid", gap: 14, minHeight: 0, overflowY: "auto", paddingRight: 4, alignContent: "start" }}>
-            <SectionLabel title="Trade Desk" />
-            <TraderAvatarPanel
-              recommendation={activeRecommendation}
-              avatarStatus={avatarStatus}
-              timeline={sortedTimeline}
-              onStart={async () => {
-                if (!activeRecommendation) return;
-                const status = await api.traderAvatarStart(activeRecommendation.id);
-                setAvatarStatus(status);
-              }}
-              onStop={async () => {
-                if (!activeRecommendation) return;
-                await api.traderAvatarStop(activeRecommendation.id);
-                const status = await api.traderAvatarStatus(activeRecommendation.id);
-                setAvatarStatus(status);
-              }}
-              onSpeak={async (text) => {
-                if (!activeRecommendation) return;
-                await api.traderAvatarSpeak(activeRecommendation.id, text);
-              }}
+
+          {/* Center: Conversation */}
+          <div className="column">
+            <SharedSummary summary={summary} symbol={activeRecommendation?.symbol} />
+            <GroupChat
+              messages={sortedTimeline}
+              onSend={handleDeskSend}
+              activeSymbol={activeRecommendation?.symbol}
             />
+          </div>
+
+          {/* Right: Trade Desk */}
+          <div className="column">
             <RecommendationCard
               recommendation={activeRecommendation}
               onReady={async () => activeRecommendation && await api.readyForApproval(activeRecommendation.id).then(load)}
@@ -194,26 +164,46 @@ export default function Page() {
               onReject={async () => activeRecommendation && await api.reject(activeRecommendation.id, "User rejected").then(load)}
             />
             <ActivePositionCard position={activePosition} />
+            {avatarStatus?.enabled && (
+              <TraderAvatarPanel
+                recommendation={activeRecommendation}
+                avatarStatus={avatarStatus}
+                timeline={sortedTimeline}
+                onStart={async () => {
+                  if (!activeRecommendation) return;
+                  setAvatarStatus(await api.traderAvatarStart(activeRecommendation.id));
+                }}
+                onStop={async () => {
+                  if (!activeRecommendation) return;
+                  await api.traderAvatarStop(activeRecommendation.id);
+                  setAvatarStatus(await api.traderAvatarStatus(activeRecommendation.id));
+                }}
+                onSpeak={async (text) => {
+                  if (!activeRecommendation) return;
+                  await api.traderAvatarSpeak(activeRecommendation.id, text);
+                }}
+              />
+            )}
           </div>
         </div>
-      </div>
+      )}
     </main>
   );
 }
 
-function SectionLabel({ title }: { title: string }) {
+function EmptyState({ onScan, onRandom }: { onScan: () => void; onRandom: () => void }) {
   return (
-    <div style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--text-soft)" }}>
-      {title}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: 48 }}>
+      <div style={{ fontSize: 48, opacity: 0.3 }}>W</div>
+      <div style={{ fontSize: 20, fontWeight: 600 }}>Weekes AATF Trading Workstation</div>
+      <div style={{ color: "var(--text-soft)", maxWidth: 480, textAlign: "center", lineHeight: 1.7 }}>
+        Multi-role AI trading desk with Research, Quant Pricing, Risk, and Trader roles.
+        Start by scanning for earnings events or triggering a random demo event.
+      </div>
+      <div style={{ display: "flex", gap: 12 }}>
+        <button className="btn btn-accent" onClick={onScan}>Run Earnings Scan</button>
+        <button className="btn btn-accent" onClick={onRandom}>Random Demo Event</button>
+      </div>
     </div>
   );
 }
-
-const topButtonStyle = {
-  border: "1px solid rgba(113, 217, 182, 0.4)",
-  background: "rgba(113, 217, 182, 0.12)",
-  color: "var(--accent)",
-  borderRadius: 12,
-  padding: "10px 14px",
-  cursor: "pointer",
-} as const;

@@ -10,93 +10,106 @@ type Props = {
   avatarStatus?: TraderAvatarStatus | null;
   recommendation?: Recommendation | null;
   onSell: (symbol: string, shares: number) => void;
-  onAvatarStart: () => Promise<void>;
+  onAvatarStart: () => Promise<TraderAvatarStatus | null>;
   onAvatarStop: () => Promise<void>;
 };
 
 export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, recommendation, onSell, onAvatarStart, onAvatarStop }: Props) {
   const agora = useAgoraAvatar();
-  const session = avatarStatus?.session;
-  const isLive = agora.connected;
+  const [starting, setStarting] = useState(false);
 
-  async function handleStart() {
-    await onAvatarStart();
+  async function handleStartCall() {
+    if (!recommendation || starting) return;
+    setStarting(true);
+    try {
+      // Phase 1+2: Backend starts agent and returns tokens
+      const status = await onAvatarStart();
+      if (!status?.session) throw new Error("No session returned");
+
+      // Phase 3: Frontend joins RTC channel for audio/video
+      await agora.join({
+        appId: status.session.appid,
+        channel: status.session.channel,
+        token: status.session.token,
+        uid: status.session.uid,
+      });
+    } catch (err: any) {
+      console.error("Start call failed:", err);
+    } finally {
+      setStarting(false);
+    }
   }
 
-  async function handleJoinRTC() {
-    if (!session) return;
-    await agora.join({
-      appId: session.appid,
-      channel: session.channel,
-      token: session.token,
-      uid: session.uid,
-      agentUid: session.agent_uid,
-    });
-  }
-
-  async function handleStop() {
+  async function handleEndCall() {
     await agora.leave();
     await onAvatarStop();
   }
 
+  const isLive = agora.connected;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Avatar */}
+      {/* Avatar Panel */}
       <div className="panel">
         <div className="panel-header">
           <span>Trader Avatar</span>
-          <span style={{ fontSize: 10, color: isLive ? "var(--accent)" : session ? "var(--warn)" : "var(--text-muted)" }}>
-            {isLive ? (agora.agentAudioPlaying ? "Speaking" : "Live") : session ? "Agent Ready — Join RTC" : "Offline"}
+          <span style={{ fontSize: 10, color: isLive ? "var(--accent)" : "var(--text-muted)" }}>
+            {isLive ? (agora.hasAudio ? "Live" : "Connected") : "Offline"}
           </span>
         </div>
 
-        {/* Video area */}
+        {/* Video container */}
         <div
           ref={agora.videoContainerRef}
           style={{
-            background: "#060d18", minHeight: 220,
-            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "#060d18",
+            minHeight: 240,
+            display: isLive && agora.hasVideo ? "block" : "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: "0",
           }}
         >
-          {!isLive && !session && (
-            <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Start a call to activate the trader avatar.
+          {!isLive && (
+            <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", padding: 24 }}>
+              {starting ? "Starting call..." : "Press Start Call to connect with the trader avatar."}
             </div>
           )}
-          {session && !isLive && (
-            <div style={{ color: "var(--warn)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Agent started on <strong>{session.channel}</strong>. Click "Join Call" to connect audio/video.
-            </div>
-          )}
-          {isLive && !agora.agentVideoTrack && (
-            <div style={{ color: "var(--accent)", fontSize: 13, textAlign: "center", padding: 20 }}>
-              Connected. Waiting for avatar video stream...
+          {isLive && !agora.hasVideo && (
+            <div style={{ color: "var(--accent)", fontSize: 13, textAlign: "center", padding: 24 }}>
+              {agora.hasAudio ? "Audio connected. Waiting for avatar video..." : "Connecting..."}
             </div>
           )}
         </div>
 
         {agora.error && (
-          <div style={{ padding: "6px 16px", fontSize: 12, color: "var(--danger)", background: "rgba(255,122,122,0.08)" }}>
+          <div style={{ padding: "6px 16px", fontSize: 12, color: "var(--danger)", background: "rgba(255,122,122,0.06)" }}>
             {agora.error}
           </div>
         )}
 
         {/* Controls */}
-        <div style={{ padding: "10px 16px", display: "flex", gap: 8, borderTop: "1px solid var(--line)" }}>
-          {!session && (
-            <button className="btn btn-accent" onClick={handleStart} disabled={!recommendation}>
-              Start Call
+        <div style={{ padding: "10px 16px", display: "flex", gap: 8, borderTop: "1px solid var(--line)", justifyContent: "center" }}>
+          {!isLive ? (
+            <button className="btn btn-accent" onClick={handleStartCall} disabled={!recommendation || starting}>
+              {starting ? "Starting..." : "Start Call"}
             </button>
-          )}
-          {session && !isLive && (
-            <button className="btn btn-accent" onClick={handleJoinRTC}>
-              Join Call
-            </button>
-          )}
-          {isLive && (
-            <button className="btn btn-danger" onClick={handleStop}>
-              End Call
-            </button>
+          ) : (
+            <>
+              <button
+                className={`btn ${agora.muted ? "btn-danger" : ""}`}
+                onClick={agora.toggleMute}
+                title={agora.muted ? "Unmute microphone" : "Mute microphone"}
+                style={{ minWidth: 44, textAlign: "center" }}
+              >
+                {agora.muted ? "\u{1F507}" : "\u{1F3A4}"}
+              </button>
+              <button className="btn btn-danger" onClick={handleEndCall}>
+                End Call
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -109,9 +122,7 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
         </div>
         <div style={{ maxHeight: 400, overflowY: "auto" }}>
           {positions.length === 0 ? (
-            <div style={{ padding: 20, color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
-              No open positions.
-            </div>
+            <div style={{ padding: 20, color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>No open positions.</div>
           ) : (
             positions.map((pos) => (
               <PositionRow key={pos.id} position={pos} active={pos.symbol === activeSymbol} onSell={onSell} />
@@ -141,9 +152,7 @@ function PositionRow({ position, active, onSell }: { position: Position; active:
         </div>
       </div>
       {!showSell ? (
-        <button onClick={() => setShowSell(true)} style={{ marginTop: 6, fontSize: 11, color: "var(--sell)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
-          Sell...
-        </button>
+        <button onClick={() => setShowSell(true)} style={{ marginTop: 6, fontSize: 11, color: "var(--sell)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Sell...</button>
       ) : (
         <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <input type="number" value={sellShares} min={1} max={total} onChange={(e) => setSellShares(Math.min(Number(e.target.value), total))}

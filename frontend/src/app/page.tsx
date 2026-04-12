@@ -143,8 +143,10 @@ export default function Page() {
               recommendation={activeRec}
               onSell={onSell}
               onAvatarStart={async () => {
-                if (!activeRec) return;
-                setAvatarStatus(await api.traderAvatarStart(activeRec.id));
+                if (!activeRec) return null;
+                const status = await api.traderAvatarStart(activeRec.id);
+                setAvatarStatus(status);
+                return status;
               }}
               onAvatarStop={async () => {
                 if (!activeRec) return;

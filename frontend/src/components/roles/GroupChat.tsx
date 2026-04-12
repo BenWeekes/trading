@@ -30,18 +30,24 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
   const [inputValue, setInputValue] = useState("");
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length]);
 
+  const filteredRoles = ROLES.filter((r) =>
+    r.key.startsWith(mentionFilter) || r.label.toLowerCase().startsWith(mentionFilter)
+  );
+
   function handleInputChange(value: string) {
     setInputValue(value);
-    // Check if user just typed @ or @partial
     const atMatch = value.match(/@(\w*)$/);
     if (atMatch) {
       setShowMentions(true);
       setMentionFilter(atMatch[1].toLowerCase());
+      setSelectedIdx(0);
     } else {
       setShowMentions(false);
     }
@@ -54,7 +60,36 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
     inputRef.current?.focus();
   }
 
-  const filteredRoles = ROLES.filter((r) => r.key.startsWith(mentionFilter) || r.label.toLowerCase().startsWith(mentionFilter));
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (showMentions && filteredRoles.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIdx((i) => (i + 1) % filteredRoles.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIdx((i) => (i - 1 + filteredRoles.length) % filteredRoles.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(filteredRoles[selectedIdx].key);
+      } else if (e.key === "Escape") {
+        setShowMentions(false);
+      }
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const val = inputValue.trim();
+    if (!val || sending) return;
+    setSending(true);
+    setInputValue("");
+    setShowMentions(false);
+    try {
+      await onSend(val);
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -91,9 +126,14 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
             );
           })
         )}
+        {sending && (
+          <div style={{ padding: "8px 10px", borderRadius: 10, background: "var(--bg-panel-soft)", color: "var(--text-muted)", fontSize: 12 }}>
+            Thinking...
+          </div>
+        )}
       </div>
 
-      {/* Input with @ autocomplete */}
+      {/* Input with @ autocomplete + keyboard nav */}
       <div style={{ position: "relative", padding: "8px 12px 12px", borderTop: "1px solid var(--line)" }}>
         {showMentions && filteredRoles.length > 0 && (
           <div style={{
@@ -101,17 +141,15 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
             background: "var(--bg-panel)", border: "1px solid var(--line)",
             borderRadius: 10, padding: 4, boxShadow: "var(--shadow)",
           }}>
-            {filteredRoles.map((r) => (
+            {filteredRoles.map((r, i) => (
               <button
                 key={r.key}
                 onClick={() => insertMention(r.key)}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "8px 10px", background: "transparent", border: "none",
-                  color: "var(--text)", cursor: "pointer", borderRadius: 6, fontSize: 13,
+                  padding: "8px 10px", background: i === selectedIdx ? "var(--bg-panel-soft)" : "transparent",
+                  border: "none", color: "var(--text)", cursor: "pointer", borderRadius: 6, fontSize: 13,
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-panel-soft)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               >
                 <span style={{ color: r.color }}>{r.icon}</span>
                 <span style={{ fontWeight: 600 }}>@{r.key}</span>
@@ -120,30 +158,23 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
             ))}
           </div>
         )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const val = inputValue.trim();
-            if (!val) return;
-            onSend(val);
-            setInputValue("");
-            setShowMentions(false);
-          }}
-          style={{ display: "flex", gap: 8 }}
-        >
+        <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
           <input
             ref={inputRef}
             value={inputValue}
             onChange={(e) => handleInputChange(e.target.value)}
-            placeholder={activeSymbol ? `Message the desk about ${activeSymbol}...` : "Select an event first"}
-            disabled={!activeSymbol}
+            onKeyDown={handleKeyDown}
+            placeholder={activeSymbol ? `Message about ${activeSymbol}... (@ to mention)` : "Select an event first"}
+            disabled={!activeSymbol || sending}
             style={{
               flex: 1, padding: "10px 14px", borderRadius: 10,
               border: "1px solid var(--line)", background: "var(--bg)",
               color: "var(--text)", fontSize: 13,
             }}
           />
-          <button type="submit" className="btn btn-accent" disabled={!activeSymbol}>Send</button>
+          <button type="submit" className="btn btn-accent" disabled={!activeSymbol || sending || !inputValue.trim()}>
+            {sending ? "..." : "Send"}
+          </button>
         </form>
       </div>
     </div>

@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Weekes AATF",
+  title: "AI Trading Platform",
   description: "Multi-role trading workstation",
 };
 

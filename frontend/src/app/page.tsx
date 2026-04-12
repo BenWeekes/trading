@@ -75,10 +75,17 @@ export default function Page() {
     setActiveRec(r.recommendation); didInit.current = true; await load();
   }
   async function onSend(msg: string) {
-    if (!activeRec) return;
-    await api.discuss(activeRec.id, msg);
-    const d = await api.rec(activeRec.id);
-    setActiveRec(d.recommendation); setTimeline(d.timeline); setSummary(d.summary);
+    if (!activeRec) {
+      console.warn("No active recommendation — cannot send chat");
+      return;
+    }
+    try {
+      await api.discuss(activeRec.id, msg);
+      const d = await api.rec(activeRec.id);
+      setActiveRec(d.recommendation); setTimeline(d.timeline); setSummary(d.summary);
+    } catch (err) {
+      console.error("Chat send failed:", err);
+    }
   }
   async function onApprove(shares: number) {
     if (!activeRec) return;

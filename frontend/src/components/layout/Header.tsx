@@ -20,7 +20,7 @@ export function Header({ portfolioValue, mode, onScan, onRandomEvent }: Props) {
           fontWeight: 700, fontSize: 15, color: "#fff",
         }}>W</div>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>Weekes AATF</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>AI Trading Platform</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>AI Trading Workstation</div>
         </div>
       </div>

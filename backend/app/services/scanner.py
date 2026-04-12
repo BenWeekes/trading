@@ -5,7 +5,7 @@ import csv
 
 from ..config import ROOT_DIR, get_settings
 from ..db.helpers import new_id, utcnow_iso
-from ..db.repositories import insert_event, upsert_recommendation
+from ..db.repositories import insert_event, list_recommendations, upsert_recommendation
 from ..services.filters import apply_pead_filters
 from ..services.position_sizing import calculate_position
 from ..adapters.fmp import FMPClient
@@ -13,6 +13,16 @@ from ..adapters.fmp import FMPClient
 
 TRADE_LOG = ROOT_DIR / "phase1" / "trade_log.csv"
 EARNINGS_LOG = ROOT_DIR / "phase1" / "earnings_log.csv"
+
+_TERMINAL_STATUSES = {"closed", "rejected", "cancelled", "failed"}
+
+
+def _find_existing_rec(symbol: str) -> dict | None:
+    """Return an active recommendation for this symbol if one exists."""
+    for rec in list_recommendations(limit=50):
+        if rec["symbol"] == symbol and rec["status"] not in _TERMINAL_STATUSES:
+            return rec
+    return None
 
 
 def _read_csv(path: Path) -> list[dict]:
@@ -62,29 +72,33 @@ async def run_scan() -> dict:
                 "linked_recommendation_ids": [],
             }
             insert_event(event_record)
-            recommendation = {
-                "id": new_id("rec"),
-                "symbol": symbol,
-                "direction": None,
-                "status": "observing",
-                "strategy_type": "PEAD",
-                "thesis": f"Earnings surprise of {surprise_pct:+.2f}% detected.",
-                "entry_price": sizing.get("entry_price"),
-                "entry_logic": sizing.get("entry_logic"),
-                "stop_price": sizing.get("stop_price"),
-                "stop_logic": sizing.get("stop_logic"),
-                "target_price": sizing.get("target_price"),
-                "target_logic": sizing.get("target_logic"),
-                "position_size_shares": sizing.get("position_size_shares"),
-                "position_size_dollars": sizing.get("position_size_dollars"),
-                "time_horizon": "1-60 days",
-                "conviction": None,
-                "supporting_roles": [],
-                "blocking_risks": [filters["blocked_by"]] if filters.get("blocked_by") else [],
-                "created_at": utcnow_iso(),
-                "updated_at": utcnow_iso(),
-            }
-            upsert_recommendation(recommendation)
+            existing = _find_existing_rec(symbol)
+            if existing:
+                recommendation = existing
+            else:
+                recommendation = {
+                    "id": new_id("rec"),
+                    "symbol": symbol,
+                    "direction": None,
+                    "status": "observing",
+                    "strategy_type": "PEAD",
+                    "thesis": f"Earnings surprise of {surprise_pct:+.2f}% detected.",
+                    "entry_price": sizing.get("entry_price"),
+                    "entry_logic": sizing.get("entry_logic"),
+                    "stop_price": sizing.get("stop_price"),
+                    "stop_logic": sizing.get("stop_logic"),
+                    "target_price": sizing.get("target_price"),
+                    "target_logic": sizing.get("target_logic"),
+                    "position_size_shares": sizing.get("position_size_shares"),
+                    "position_size_dollars": sizing.get("position_size_dollars"),
+                    "time_horizon": "1-60 days",
+                    "conviction": None,
+                    "supporting_roles": [],
+                    "blocking_risks": [filters["blocked_by"]] if filters.get("blocked_by") else [],
+                    "created_at": utcnow_iso(),
+                    "updated_at": utcnow_iso(),
+                }
+                upsert_recommendation(recommendation)
             results.append({"event": event_record, "recommendation": recommendation, "filters": filters})
         return {"results": results}
     except Exception:
@@ -128,29 +142,33 @@ async def _scan_from_logs_or_mock() -> dict:
             "linked_recommendation_ids": [],
         }
         insert_event(event_record)
-        sizing = calculate_position(100.0 + surprise_pct, 100000.0)
-        recommendation = {
-            "id": new_id("rec"),
-            "symbol": symbol,
-            "direction": None,
-            "status": "observing",
-            "strategy_type": "PEAD",
-            "thesis": f"{symbol} qualified for post-earnings role review.",
-            "entry_price": sizing.get("entry_price"),
-            "entry_logic": sizing.get("entry_logic"),
-            "stop_price": sizing.get("stop_price"),
-            "stop_logic": sizing.get("stop_logic"),
-            "target_price": sizing.get("target_price"),
-            "target_logic": sizing.get("target_logic"),
-            "position_size_shares": sizing.get("position_size_shares"),
-            "position_size_dollars": sizing.get("position_size_dollars"),
-            "time_horizon": "1-60 days",
-            "conviction": None,
-            "supporting_roles": [],
-            "blocking_risks": [],
-            "created_at": utcnow_iso(),
-            "updated_at": utcnow_iso(),
-        }
-        upsert_recommendation(recommendation)
+        existing = _find_existing_rec(symbol)
+        if existing:
+            recommendation = existing
+        else:
+            sizing = calculate_position(100.0 + surprise_pct, 100000.0)
+            recommendation = {
+                "id": new_id("rec"),
+                "symbol": symbol,
+                "direction": None,
+                "status": "observing",
+                "strategy_type": "PEAD",
+                "thesis": f"{symbol} qualified for post-earnings role review.",
+                "entry_price": sizing.get("entry_price"),
+                "entry_logic": sizing.get("entry_logic"),
+                "stop_price": sizing.get("stop_price"),
+                "stop_logic": sizing.get("stop_logic"),
+                "target_price": sizing.get("target_price"),
+                "target_logic": sizing.get("target_logic"),
+                "position_size_shares": sizing.get("position_size_shares"),
+                "position_size_dollars": sizing.get("position_size_dollars"),
+                "time_horizon": "1-60 days",
+                "conviction": None,
+                "supporting_roles": [],
+                "blocking_risks": [],
+                "created_at": utcnow_iso(),
+                "updated_at": utcnow_iso(),
+            }
+            upsert_recommendation(recommendation)
         results.append({"event": event_record, "recommendation": recommendation, "filters": {"filters_passed": True}})
     return {"results": results}

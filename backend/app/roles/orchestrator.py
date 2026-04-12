@@ -112,21 +112,32 @@ class Orchestrator:
         ensure_transition(recommendation["status"], "draft_recommendation")
         recommendation["status"] = "draft_recommendation"
         ensure_transition(recommendation["status"], "awaiting_user_feedback")
+
+        # Extract direction from structured payload or from the text
+        payload = trader_msg["structured_payload"] or {}
+        text = trader_msg["message_text"] or ""
+        direction = payload.get("final_recommendation") or payload.get("action") or payload.get("direction")
+        if not direction:
+            direction = self._extract_direction_from_text(text)
+        conviction = payload.get("conviction")
+        if conviction is None:
+            conviction = self._extract_conviction_from_text(text)
+
         recommendation.update(
             {
-                "direction": trader_msg["structured_payload"].get("final_recommendation", "PASS"),
+                "direction": direction,
                 "status": "awaiting_user_feedback",
-                "thesis": trader_msg["structured_payload"].get("thesis"),
-                "entry_price": self._read_numeric(trader_msg["structured_payload"], "entry_price")
+                "thesis": payload.get("thesis") or text[:300] or recommendation.get("thesis"),
+                "entry_price": self._read_numeric(payload, "entry_price")
                 or recommendation.get("entry_price"),
-                "entry_logic": trader_msg["structured_payload"].get("entry_logic"),
-                "target_price": self._read_numeric(trader_msg["structured_payload"], "target_price")
+                "entry_logic": payload.get("entry_logic"),
+                "target_price": self._read_numeric(payload, "target_price")
                 or recommendation.get("target_price"),
-                "target_logic": trader_msg["structured_payload"].get("target_logic"),
-                "stop_price": self._read_numeric(trader_msg["structured_payload"], "stop_price")
+                "target_logic": payload.get("target_logic"),
+                "stop_price": self._read_numeric(payload, "stop_price")
                 or recommendation.get("stop_price"),
-                "stop_logic": trader_msg["structured_payload"].get("stop_logic"),
-                "conviction": trader_msg["structured_payload"].get("conviction", 5),
+                "stop_logic": payload.get("stop_logic"),
+                "conviction": conviction,
                 "supporting_roles": ["research", "quant_pricing"],
                 "blocking_risks": ["Sizing caution"],
                 "updated_at": utcnow_iso(),
@@ -299,6 +310,41 @@ class Orchestrator:
         insert_role_message(user_message)
         await event_bus.publish("role_message", user_message)
         return user_message
+
+    @staticmethod
+    def _extract_direction_from_text(text: str) -> str:
+        """Parse BUY/SELL/SHORT/COVER/PASS from the trader's natural language response."""
+        upper = text.upper()
+        # Look for explicit action statements
+        for action in ("BUY", "SHORT", "SELL", "COVER"):
+            for pattern in (f"ACTION: **{action}", f"ACTION: {action}", f"RECOMMENDATION: {action}",
+                           f"I RECOMMEND {action}", f"RECOMMEND {action}", f"MY CALL: {action}",
+                           f"VERDICT: {action}", f"**{action}**"):
+                if pattern in upper:
+                    return action
+        # Fallback: look for "BUY" or "SHORT" as standalone prominent words
+        for action in ("BUY", "SHORT", "SELL", "COVER"):
+            if f" {action} " in f" {upper} ":
+                return action
+        return "PASS"
+
+    @staticmethod
+    def _extract_conviction_from_text(text: str) -> int:
+        """Parse conviction score like '7/10' or 'Conviction: 8' from text."""
+        import re
+        patterns = [
+            r'conviction[:\s]*\**(\d+)\s*/\s*10',
+            r'conviction[:\s]*\**(\d+)',
+            r'(\d+)\s*/\s*10\s*conviction',
+            r'(\d+)/10',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                val = int(match.group(1))
+                if 1 <= val <= 10:
+                    return val
+        return 5
 
     @staticmethod
     def _read_numeric(payload: dict, key: str) -> float | None:

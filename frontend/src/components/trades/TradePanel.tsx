@@ -57,12 +57,12 @@ export function TradePanel({ recommendation, summary, onApprove, onExecute, onRe
       </div>
 
       <div className="panel-body" style={{ display: "grid", gap: 10 }}>
-        {/* Bull / Bear / Disagreement */}
+        {/* Bull / Bear / Disagreement — truncated with expand */}
         {hasSummary && (
-          <div style={{ display: "grid", gap: 4, fontSize: 12, padding: "8px 10px", background: "var(--bg-panel-soft)", borderRadius: 8 }}>
-            {summary!.bull_case && <div><span style={{ color: "var(--buy)", fontWeight: 600 }}>Bull:</span> {summary!.bull_case}</div>}
-            {summary!.bear_case && <div><span style={{ color: "var(--sell)", fontWeight: 600 }}>Bear:</span> {summary!.bear_case}</div>}
-            {summary!.key_disagreement && <div><span style={{ color: "var(--warn)", fontWeight: 600 }}>Disagreement:</span> {summary!.key_disagreement}</div>}
+          <div style={{ display: "grid", gap: 2, fontSize: 12, padding: "8px 10px", background: "var(--bg-panel-soft)", borderRadius: 8 }}>
+            {summary!.bull_case && <TruncatedLine label="Bull" color="var(--buy)" text={summary!.bull_case} />}
+            {summary!.bear_case && <TruncatedLine label="Bear" color="var(--sell)" text={summary!.bear_case} />}
+            {summary!.key_disagreement && <TruncatedLine label="Disagree" color="var(--warn)" text={summary!.key_disagreement} />}
           </div>
         )}
 
@@ -114,6 +114,19 @@ function Level({ label, price, logic, color }: { label: string; price?: number |
       <div style={{ fontSize: 15, fontWeight: 600, color, fontVariantNumeric: "tabular-nums" }}>{price != null ? `$${price.toFixed(2)}` : "\u2014"}</div>
       {logic && <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1, lineHeight: 1.3 }}>{logic}</div>}
     </div>
+  );
+}
+
+function TruncatedLine({ label, color, text }: { label: string; color: string; text: string }) {
+  const short = text.length > 80;
+  return (
+    <details style={{ fontSize: 12 }}>
+      <summary style={{ cursor: short ? "pointer" : "default", listStyle: short ? undefined : "none" }}>
+        <span style={{ color, fontWeight: 600 }}>{label}:</span>{" "}
+        <span style={{ color: "var(--text-soft)" }}>{short ? text.slice(0, 80) + "..." : text}</span>
+      </summary>
+      {short && <div style={{ color: "var(--text-soft)", padding: "4px 0 4px 16px" }}>{text}</div>}
+    </details>
   );
 }
 

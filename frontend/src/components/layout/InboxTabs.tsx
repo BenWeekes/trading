@@ -11,6 +11,10 @@ type Props = {
   onSelectRecommendation: (rec: Recommendation) => void;
 };
 
+function recForSymbol(recs: Recommendation[], symbol?: string | null): Recommendation | undefined {
+  return symbol ? recs.find((r) => r.symbol === symbol) : undefined;
+}
+
 const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
 
 export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent, onSelectRecommendation }: Props) {
@@ -31,7 +35,7 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
         <TabButton active={tab === "events"} onClick={() => setTab("events")} count={deduped.length}>
           Events
         </TabButton>
-        <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.length} badge={pendingCount || undefined}>
+        <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.filter((r) => r.direction !== "PASS").length} badge={pendingCount || undefined}>
           Recommendations
         </TabButton>
       </div>
@@ -43,25 +47,33 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
             <Empty>No events yet. Run a scan or trigger a random event.</Empty>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {deduped.map((ev) => (
-                <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                      {new Date(ev.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>
-                </InboxItem>
-              ))}
+              {deduped.map((ev) => {
+                const rec = recForSymbol(recommendations, ev.symbol);
+                const isPassed = rec?.direction === "PASS";
+                return (
+                  <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                      <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {isPassed && <span className="badge badge-muted">PASS</span>}
+                        <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {new Date(ev.timestamp).toLocaleTimeString()}
+                        </span>
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>
+                  </InboxItem>
+                );
+              })}
             </div>
           )
         ) : (
-          recommendations.length === 0 ? (
-            <Empty>No recommendations yet.</Empty>
+          recommendations.filter((r) => r.direction !== "PASS").length === 0 ? (
+            <Empty>No actionable recommendations yet.</Empty>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {[...recommendations]
+                .filter((r) => r.direction !== "PASS")
                 .sort((a, b) => (PENDING.has(a.status) ? 0 : 1) - (PENDING.has(b.status) ? 0 : 1))
                 .map((rec) => (
                   <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>

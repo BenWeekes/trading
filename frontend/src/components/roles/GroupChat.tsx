@@ -28,6 +28,7 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -93,9 +94,16 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div className="panel-header">
+      <div className="panel-header" style={{ flexWrap: "wrap", gap: 6 }}>
         <span>Desk Chat {activeSymbol ? `\u2014 ${activeSymbol}` : ""}</span>
-        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Type @ to mention a role</span>
+        <div style={{ display: "flex", gap: 4 }}>
+          <FilterChip active={roleFilter === null} onClick={() => setRoleFilter(null)} color="var(--text-soft)">All</FilterChip>
+          {ROLES.map((r) => (
+            <FilterChip key={r.key} active={roleFilter === r.key} onClick={() => setRoleFilter(roleFilter === r.key ? null : r.key)} color={r.color}>
+              {r.icon}
+            </FilterChip>
+          ))}
+        </div>
       </div>
 
       {/* Messages */}
@@ -105,7 +113,13 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
             {activeSymbol ? "Ask the desk something, or type @ to pick a role." : "Select an event to start."}
           </div>
         ) : (
-          messages.map((msg) => {
+          messages
+          .filter((msg) => {
+            if (!roleFilter) return true;
+            const senderKey = msg.sender.replace("role:", "");
+            return senderKey === roleFilter || msg.role === roleFilter || msg.sender === "user";
+          })
+          .map((msg) => {
             const info = senderInfo(msg.sender, msg.role);
             const isQuery = msg.structured_payload?.type === "role_query";
             return (
@@ -178,5 +192,22 @@ export function GroupChat({ messages, onSend, activeSymbol }: Props) {
         </form>
       </div>
     </div>
+  );
+}
+
+function FilterChip({ active, onClick, color, children }: { active: boolean; onClick: () => void; color: string; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "2px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+        border: `1px solid ${active ? color : "transparent"}`,
+        background: active ? "rgba(255,255,255,0.06)" : "transparent",
+        color: active ? color : "var(--text-muted)",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
   );
 }

@@ -1,0 +1,41 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+*.egg
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+
+# Data (runtime, not source)
+data/aatf.db
+data/*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Embedded repos (have their own git history)
+agora-agent-samples/
+ai-devkit/

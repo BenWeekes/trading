@@ -1,0 +1,24 @@
+[project]
+name = "aatf-backend"
+version = "0.1.0"
+description = "Backend for Weekes AATF trading workstation"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "httpx>=0.27",
+  "openai>=1.50",
+  "eval_type_backport>=0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

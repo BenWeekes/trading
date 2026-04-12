@@ -1,0 +1,7 @@
+{
+  "type": "internal_alert",
+  "symbol": "AAPL",
+  "headline": "Risk flags concentration after existing large-cap tech exposure",
+  "body_excerpt": "New idea overlaps with current holdings and should be reduced or passed.",
+  "importance": 4
+}

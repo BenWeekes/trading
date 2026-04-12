@@ -71,10 +71,9 @@ async def approve(recommendation_id: str, payload: dict):
     recommendation = get_recommendation(recommendation_id)
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    # Allow approve from awaiting_user_feedback (skip the ready step) or awaiting_user_approval
+    # Approve only from awaiting_user_approval — user must click Ready first
     if recommendation["status"] == "awaiting_user_feedback":
-        ensure_transition(recommendation["status"], "awaiting_user_approval")
-        recommendation["status"] = "awaiting_user_approval"
+        raise HTTPException(status_code=400, detail="Recommendation is still in feedback. Click 'Ready for Approval' first.")
     ensure_transition(recommendation["status"], "approved")
     now = utcnow_iso()
     recommendation["status"] = "approved"
@@ -118,11 +117,12 @@ async def reject(recommendation_id: str, payload: dict):
     recommendation = get_recommendation(recommendation_id)
     if not recommendation:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    # Allow reject from awaiting_user_feedback (skip the ready step)
+    # Allow reject from both feedback and approval states
+    if recommendation["status"] not in ("awaiting_user_feedback", "awaiting_user_approval"):
+        ensure_transition(recommendation["status"], "rejected")  # will raise if invalid
     if recommendation["status"] == "awaiting_user_feedback":
-        ensure_transition(recommendation["status"], "awaiting_user_approval")
+        # Skip to approval then reject
         recommendation["status"] = "awaiting_user_approval"
-    ensure_transition(recommendation["status"], "rejected")
     now = utcnow_iso()
     recommendation["status"] = "rejected"
     recommendation["updated_at"] = now

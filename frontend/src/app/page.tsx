@@ -48,16 +48,23 @@ export default function Page() {
     api.traderAvatarStatus(activeRecId).then(setAvatarStatus).catch(console.error);
   }, [activeRecId]);
 
-  useSSE(streamUrl, useCallback((_: string, payload: unknown) => {
-    if (typeof payload === "object" && payload && "recommendation_id" in payload) {
-      const p = payload as { recommendation_id?: string };
-      if (p.recommendation_id === activeRecId) {
-        api.rec(p.recommendation_id!).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
+  useSSE(streamUrl, useCallback((type: string, payload: unknown) => {
+    const p = (typeof payload === "object" && payload) ? payload as Record<string, unknown> : {};
+
+    // Targeted refresh based on event type
+    if (type === "recommendation_update" || type === "role_message" || type === "role_query" || type === "summary_update") {
+      if (p.recommendation_id === activeRecId && activeRecId) {
+        api.rec(activeRecId).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
       }
+      // Refresh rec list (lightweight)
+      api.recs().then((d) => setRecommendations(d.recommendations)).catch(console.error);
+    } else if (type === "position_update") {
+      api.positions().then((d) => setPositions(d.positions)).catch(console.error);
+    } else if (type === "market_event") {
+      api.events().then((d) => setEvents(d.events)).catch(console.error);
     }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => void load(), 500);
-  }, [activeRecId, load]));
+    // No full load() — only refetch what the event type implies
+  }, [activeRecId]));
 
   useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
@@ -93,12 +100,14 @@ export default function Page() {
   }
   async function onExecute() { if (activeRec) { await api.execute(activeRec.id); await load(); } }
   async function onReject() { if (activeRec) { await api.reject(activeRec.id, "User rejected"); await load(); } }
-  async function onSell(symbol: string, shares: number) {
-    const pos = positions.find((p) => p.symbol === symbol);
-    if (!pos?.id) return;
-    const r = await api.sellTrade(pos.id, shares);
-    alert(`Sold ${r.shares_sold} sh of ${symbol}. P&L: $${r.pnl.toFixed(2)}`);
-    await load();
+  async function onSell(tradeId: string, symbol: string, shares: number) {
+    try {
+      const r = await api.sellTrade(tradeId, shares);
+      alert(`Sold ${r.shares_sold} sh of ${symbol}. P&L: $${r.pnl.toFixed(2)}`);
+      await load();
+    } catch (err) {
+      alert("Sell failed: " + (err instanceof Error ? err.message : "Unknown error"));
+    }
   }
 
   return (
@@ -127,6 +136,7 @@ export default function Page() {
             <TradePanel
               recommendation={activeRec}
               summary={summary}
+              onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
               onApprove={onApprove}
               onExecute={onExecute}
               onReject={onReject}

@@ -22,7 +22,7 @@ type Props = {
   activeSymbol?: string | null;
   avatarStatus?: TraderAvatarStatus | null;
   recommendation?: Recommendation | null;
-  onSell: (symbol: string, shares: number) => void;
+  onSell: (tradeId: string, symbol: string, shares: number) => void;
   onAvatarStart: () => Promise<TraderAvatarStatus | null>;
   onAvatarStop: () => Promise<void>;
 };
@@ -168,7 +168,7 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
   );
 }
 
-function PositionRow({ position, active, onSell }: { position: Position; active: boolean; onSell: (s: string, n: number) => void }) {
+function PositionRow({ position, active, onSell }: { position: Position; active: boolean; onSell: (id: string, s: string, n: number) => void }) {
   const [sellShares, setSellShares] = useState(position.shares ?? 0);
   const [showSell, setShowSell] = useState(false);
   const pnl = position.unrealized_pnl ?? 0;
@@ -191,8 +191,8 @@ function PositionRow({ position, active, onSell }: { position: Position; active:
         <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <input type="number" value={sellShares} min={1} max={total} onChange={(e) => setSellShares(Math.min(Number(e.target.value), total))}
             style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)", fontSize: 12, textAlign: "center" }} />
-          <button className="btn btn-danger" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.symbol, sellShares); setShowSell(false); }}>Sell {sellShares}</button>
-          {sellShares < total && <button className="btn" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.symbol, total); setShowSell(false); }}>All</button>}
+          <button className="btn btn-danger" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, sellShares); setShowSell(false); }}>Sell {sellShares}</button>
+          {sellShares < total && <button className="btn" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, total); setShowSell(false); }}>All</button>}
           <button style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }} onClick={() => setShowSell(false)}>Cancel</button>
         </div>
       )}

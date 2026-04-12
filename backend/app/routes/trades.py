@@ -53,10 +53,18 @@ async def sell_trade(trade_id: str, payload: dict):
     now = utcnow_iso()
     exit_price = float(trade.get("current_price") or trade.get("entry_price") or 0)
     entry_price = float(trade.get("entry_price") or 0)
-    pnl = (exit_price - entry_price) * sell_shares if entry_price else 0
+    direction = (trade.get("direction") or "BUY").upper()
+
+    # P&L depends on direction: longs profit when price rises, shorts profit when price falls
+    if direction in ("SHORT", "SELL"):
+        pnl = (entry_price - exit_price) * sell_shares if entry_price else 0
+    else:
+        pnl = (exit_price - entry_price) * sell_shares if entry_price else 0
+
+    # Determine exit action name
+    exit_action = "cover" if direction in ("SHORT", "SELL") else "sell"
 
     if sell_shares >= total_shares:
-        # Full close
         update_trade(
             trade_id,
             closed_at=now,
@@ -67,7 +75,6 @@ async def sell_trade(trade_id: str, payload: dict):
             risk_state="closed",
         )
     else:
-        # Partial close — reduce shares, log execution
         remaining = total_shares - sell_shares
         update_trade(trade_id, shares=remaining)
 
@@ -75,13 +82,13 @@ async def sell_trade(trade_id: str, payload: dict):
         "id": new_id("exec"),
         "recommendation_id": trade.get("recommendation_id"),
         "trade_id": trade_id,
-        "order_type": "paper_sell",
+        "order_type": f"paper_{exit_action}",
         "submitted_at": now,
         "filled_at": now,
         "fill_price": exit_price,
         "fill_qty": sell_shares,
         "broker_order_id": new_id("broker"),
-        "broker_response": {"paper": True, "action": "sell"},
+        "broker_response": {"paper": True, "action": exit_action, "direction": direction},
         "status": "filled",
     })
 

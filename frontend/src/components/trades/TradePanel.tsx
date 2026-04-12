@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Recommendation, Summary } from "@/lib/types";
 
 type Props = {
   recommendation?: Recommendation | null;
   summary?: Summary | null;
+  onReady: () => void;
   onApprove: (shares: number) => void;
   onExecute: () => void;
   onReject: () => void;
@@ -20,10 +21,13 @@ const ACTION_TIPS: Record<string, string> = {
   COVER: "Close a short position", PASS: "No action — best move is to wait",
 };
 
-export function TradePanel({ recommendation, summary, onApprove, onExecute, onReject }: Props) {
+export function TradePanel({ recommendation, summary, onReady, onApprove, onExecute, onReject }: Props) {
   const rec = recommendation;
-  const suggestedShares = rec?.position_size_shares ?? rec?.conviction ?? 10;
-  const [shares, setShares] = useState(suggestedShares);
+  const [shares, setShares] = useState(rec?.position_size_shares ?? 10);
+
+  // Reset shares when recommendation changes
+  const recId = rec?.id;
+  useEffect(() => { setShares(rec?.position_size_shares ?? 10); }, [recId]);
 
   if (!rec) {
     return (
@@ -38,9 +42,12 @@ export function TradePanel({ recommendation, summary, onApprove, onExecute, onRe
 
   const action = rec.direction ?? "PASS";
   const color = ACTION_COLORS[action] ?? "var(--text)";
-  const canApprove = ["awaiting_user_feedback", "awaiting_user_approval"].includes(rec.status);
+  const isFeedback = rec.status === "awaiting_user_feedback";
+  const isApproval = rec.status === "awaiting_user_approval";
+  const canReady = isFeedback;  // Must click Ready before Approve
+  const canApprove = isApproval;
   const canExecute = rec.status === "approved";
-  const canReject = ["awaiting_user_feedback", "awaiting_user_approval"].includes(rec.status);
+  const canReject = isFeedback || isApproval;
   const hasSummary = summary?.bull_case || summary?.bear_case;
 
   return (
@@ -81,7 +88,7 @@ export function TradePanel({ recommendation, summary, onApprove, onExecute, onRe
         </div>
 
         {/* Buy controls */}
-        {canApprove && action !== "PASS" && (
+        {(canReady || canApprove) && action !== "PASS" && (
           <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 4, borderTop: "1px solid var(--line)" }}>
             <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Shares</span>
             <input
@@ -98,6 +105,7 @@ export function TradePanel({ recommendation, summary, onApprove, onExecute, onRe
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {canReady && <button className="btn btn-accent" onClick={onReady}>Ready for Approval</button>}
           {canApprove && <button className="btn btn-accent" onClick={() => onApprove(shares)}>Approve{action !== "PASS" ? ` (${shares} sh)` : ""}</button>}
           {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute Order</button>}
           {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}

@@ -18,3 +18,15 @@ last_reviewed: `2026-04-12`
 | [06_interfaces](L1/06_interfaces.md) | APIs, SSE events, data objects, avatar interfaces |
 | [07_gotchas](L1/07_gotchas.md) | Known traps, subtle behaviors, and local issues |
 | [08_security](L1/08_security.md) | Secrets, approval safety, execution boundaries, auth notes |
+
+| Deep Dive | Purpose |
+| --- | --- |
+| [role_and_state_machine](L1/deep_dives/role_and_state_machine.md) | Role system design, state machine transitions |
+| [api_contracts](L1/deep_dives/api_contracts.md) | Full API surface with request/response shapes |
+| [agora_trader_integration](L1/deep_dives/agora_trader_integration.md) | Avatar RTC integration details |
+| [runtime_modes](L1/deep_dives/runtime_modes.md) | Live, mock, replay event modes |
+
+| Spec Document | Purpose |
+| --- | --- |
+| [trading_plan_claude.md](/trading_plan_claude.md) | Full build specification — strategies, schemas, API spec, DB, costs, migration |
+| [trading_plan_codex.md](/trading_plan_codex.md) | Product direction, MVP scope, UX design, build sequence |

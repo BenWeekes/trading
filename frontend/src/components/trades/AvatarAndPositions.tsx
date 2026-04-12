@@ -173,11 +173,16 @@ function PositionRow({ position, active, onSell }: { position: Position; active:
   const [showSell, setShowSell] = useState(false);
   const pnl = position.unrealized_pnl ?? 0;
   const total = position.shares ?? 0;
+  const dir = (position.direction ?? "BUY").toUpperCase();
+  const isShort = dir === "SHORT";
+  const exitLabel = isShort ? "Cover" : "Sell";
+  const dirColor = isShort ? "var(--warn)" : "var(--buy)";
 
   return (
     <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", background: active ? "var(--accent-glow)" : "transparent" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: dirColor, marginRight: 6 }}>{dir}</span>
           <strong style={{ fontSize: 14 }}>{position.symbol}</strong>
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>{total} sh @ ${Number(position.entry_price ?? 0).toFixed(2)}</span>
         </div>
@@ -186,13 +191,13 @@ function PositionRow({ position, active, onSell }: { position: Position; active:
         </div>
       </div>
       {!showSell ? (
-        <button onClick={() => setShowSell(true)} style={{ marginTop: 6, fontSize: 11, color: "var(--sell)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Sell...</button>
+        <button onClick={() => setShowSell(true)} style={{ marginTop: 6, fontSize: 11, color: "var(--sell)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>{exitLabel}...</button>
       ) : (
         <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <input type="number" value={sellShares} min={1} max={total} onChange={(e) => setSellShares(Math.min(Number(e.target.value), total))}
             style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)", fontSize: 12, textAlign: "center" }} />
-          <button className="btn btn-danger" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, sellShares); setShowSell(false); }}>Sell {sellShares}</button>
-          {sellShares < total && <button className="btn" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, total); setShowSell(false); }}>All</button>}
+          <button className="btn btn-danger" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, sellShares); setShowSell(false); }}>{exitLabel} {sellShares}</button>
+          {sellShares < total && <button className="btn" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => { onSell(position.id, position.symbol, total); setShowSell(false); }}>{exitLabel} All</button>}
           <button style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer" }} onClick={() => setShowSell(false)}>Cancel</button>
         </div>
       )}

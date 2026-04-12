@@ -94,8 +94,9 @@ async def sell_trade(trade_id: str, payload: dict):
 
     await event_bus.publish("position_update", {
         "symbol": trade["symbol"],
-        "action": "sell",
-        "shares_sold": sell_shares,
+        "action": exit_action,
+        "direction": direction,
+        "shares_closed": sell_shares,
     })
 
     updated = get_trade(trade_id)

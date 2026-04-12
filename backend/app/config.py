@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
-    openai_model: str = "gpt-4.1"
+    openai_model: str = "gpt-5.1"
     agora_enabled: bool = True
     agora_backend_url: str = "http://localhost:8082"
     agora_avatar_client_url: str = "http://localhost:8084"

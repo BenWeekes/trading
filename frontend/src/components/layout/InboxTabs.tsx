@@ -35,7 +35,7 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
         <TabButton active={tab === "events"} onClick={() => setTab("events")} count={deduped.length}>
           Events
         </TabButton>
-        <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.filter((r) => r.direction !== "PASS").length} badge={pendingCount || undefined}>
+        <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.filter((r) => r.direction && r.direction !== "PASS").length} badge={pendingCount || undefined}>
           Recommendations
         </TabButton>
       </div>
@@ -68,12 +68,12 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
             </div>
           )
         ) : (
-          recommendations.filter((r) => r.direction !== "PASS").length === 0 ? (
+          recommendations.filter((r) => r.direction && r.direction !== "PASS").length === 0 ? (
             <Empty>No actionable recommendations yet.</Empty>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {[...recommendations]
-                .filter((r) => r.direction !== "PASS")
+                .filter((r) => r.direction && r.direction !== "PASS")
                 .sort((a, b) => (PENDING.has(a.status) ? 0 : 1) - (PENDING.has(b.status) ? 0 : 1))
                 .map((rec) => (
                   <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>

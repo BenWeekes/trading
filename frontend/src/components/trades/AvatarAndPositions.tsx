@@ -44,11 +44,6 @@ export function AvatarAndPositions({ positions, activeSymbol, avatarStatus, reco
           <button className="btn btn-danger" onClick={onAvatarStop} disabled={!session}>
             Stop Call
           </button>
-          {recommendation && (
-            <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: "auto", alignSelf: "center" }}>
-              {recommendation.symbol} — {recommendation.status.replace(/_/g, " ")}
-            </span>
-          )}
         </div>
       </div>
 

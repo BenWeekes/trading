@@ -51,44 +51,74 @@ async def candidates():
 async def random_event_flow():
     symbol = random.choice(["NVDA", "AAPL", "MSFT", "META", "AMD", "PLTR", "CRM"])
     event_type = random.choice(["earnings", "news", "price_alert"])
+    headlines = {
+        "earnings": [
+            f"{symbol} beats EPS by {random.randint(5,25)}% on strong revenue",
+            f"{symbol} misses estimates, lowers guidance",
+            f"{symbol} reports in-line quarter but raises full-year outlook",
+        ],
+        "news": [
+            f"{symbol} announces major partnership deal",
+            f"Analyst upgrades {symbol} to outperform with new price target",
+            f"{symbol} faces regulatory scrutiny, shares volatile",
+        ],
+        "price_alert": [
+            f"{symbol} surges {random.randint(3,12)}% on heavy volume",
+            f"{symbol} breaks below 50-day moving average",
+            f"{symbol} hits new 52-week high on momentum",
+        ],
+    }
     event = {
         "id": new_id("evt"),
         "type": event_type,
         "symbol": symbol,
-        "headline": f"{symbol} random {event_type.replace('_', ' ')} event",
-        "body_excerpt": "Generated locally to test the workstation flow.",
-        "source": "Demo Generator",
+        "headline": random.choice(headlines[event_type]),
+        "body_excerpt": f"Demo {event_type.replace('_', ' ')} event for testing the AI trading desk.",
+        "source": "Demo",
         "timestamp": utcnow_iso(),
-        "importance": random.randint(2, 5),
+        "importance": random.randint(3, 5),
         "linked_recommendation_ids": [],
     }
-    sizing = calculate_position(100 + random.randint(0, 40), 100000.0)
-    recommendation = {
-        "id": new_id("rec"),
-        "symbol": symbol,
-        "direction": None,
-        "status": "observing",
-        "strategy_type": "DEMO",
-        "thesis": f"Random {event_type} event for {symbol}.",
-        "entry_price": sizing.get("entry_price"),
-        "entry_logic": sizing.get("entry_logic"),
-        "stop_price": sizing.get("stop_price"),
-        "stop_logic": sizing.get("stop_logic"),
-        "target_price": sizing.get("target_price"),
-        "target_logic": sizing.get("target_logic"),
-        "position_size_shares": sizing.get("position_size_shares"),
-        "position_size_dollars": sizing.get("position_size_dollars"),
-        "time_horizon": "demo",
-        "conviction": None,
-        "supporting_roles": [],
-        "blocking_risks": [],
-        "created_at": utcnow_iso(),
-        "updated_at": utcnow_iso(),
-    }
-    from ..db.repositories import insert_event, upsert_recommendation
+
+    # Check if we already have a recommendation for this symbol — reuse it
+    from ..db.repositories import insert_event, list_recommendations, upsert_recommendation
+
+    existing_rec = next((r for r in list_recommendations(limit=50) if r["symbol"] == symbol and r["status"] not in ("closed", "rejected", "cancelled")), None)
+
+    if existing_rec:
+        recommendation = existing_rec
+    else:
+        sizing = calculate_position(100 + random.randint(0, 40), 100000.0)
+        recommendation = {
+            "id": new_id("rec"),
+            "symbol": symbol,
+            "direction": None,
+            "status": "observing",
+            "strategy_type": "DEMO",
+            "thesis": None,
+            "entry_price": sizing.get("entry_price"),
+            "entry_logic": sizing.get("entry_logic"),
+            "stop_price": sizing.get("stop_price"),
+            "stop_logic": sizing.get("stop_logic"),
+            "target_price": sizing.get("target_price"),
+            "target_logic": sizing.get("target_logic"),
+            "position_size_shares": sizing.get("position_size_shares"),
+            "position_size_dollars": sizing.get("position_size_dollars"),
+            "time_horizon": "demo",
+            "conviction": None,
+            "supporting_roles": [],
+            "blocking_risks": [],
+            "created_at": utcnow_iso(),
+            "updated_at": utcnow_iso(),
+        }
+        upsert_recommendation(recommendation)
 
     insert_event(event)
-    upsert_recommendation(recommendation)
     await event_bus.publish("market_event", event)
-    analyzed = await orchestrator.analyze_event(recommendation, event, get_portfolio_summary())
-    return {"event": event, "recommendation": analyzed}
+
+    # Only run full analysis if the rec is in an analysable state
+    if recommendation["status"] in ("observing", "under_discussion"):
+        analyzed = await orchestrator.analyze_event(recommendation, event, get_portfolio_summary())
+        return {"event": event, "recommendation": analyzed}
+
+    return {"event": event, "recommendation": recommendation}

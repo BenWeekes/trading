@@ -17,11 +17,18 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
   const [tab, setTab] = useState<"events" | "recs">("events");
   const pendingCount = recommendations.filter((r) => PENDING.has(r.status)).length;
 
+  // Dedupe events: show only the latest event per symbol
+  const deduped = events.reduce<EventItem[]>((acc, ev) => {
+    const key = ev.symbol ?? ev.id;
+    if (!acc.find((e) => (e.symbol ?? e.id) === key)) acc.push(ev);
+    return acc;
+  }, []);
+
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Tab bar */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
-        <TabButton active={tab === "events"} onClick={() => setTab("events")} count={events.length}>
+        <TabButton active={tab === "events"} onClick={() => setTab("events")} count={deduped.length}>
           Events
         </TabButton>
         <TabButton active={tab === "recs"} onClick={() => setTab("recs")} count={recommendations.length} badge={pendingCount || undefined}>
@@ -32,11 +39,11 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
         {tab === "events" ? (
-          events.length === 0 ? (
+          deduped.length === 0 ? (
             <Empty>No events yet. Run a scan or trigger a random event.</Empty>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {events.map((ev) => (
+              {deduped.map((ev) => (
                 <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>

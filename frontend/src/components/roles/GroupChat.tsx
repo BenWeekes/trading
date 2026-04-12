@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RoleMessage } from "@/lib/types";
 
 type Props = {
@@ -9,121 +9,143 @@ type Props = {
   activeSymbol?: string | null;
 };
 
-const ROLE_ICONS: Record<string, string> = {
-  research: "\u{1F4CA}",
-  risk: "\u{1F6E1}",
-  quant_pricing: "\u{1F4C8}",
-  trader: "\u{1F4BC}",
-};
+const ROLES = [
+  { key: "research", icon: "\u{1F4CA}", label: "Research", color: "#60a5fa" },
+  { key: "risk", icon: "\u{1F6E1}", label: "Risk", color: "#f87171" },
+  { key: "quant_pricing", icon: "\u{1F4C8}", label: "Quant", color: "#a78bfa" },
+  { key: "trader", icon: "\u{1F4BC}", label: "Trader", color: "var(--accent)" },
+];
 
-const ROLE_LABELS: Record<string, string> = {
-  research: "Research",
-  risk: "Risk",
-  quant_pricing: "Quant",
-  trader: "Trader",
-};
+const ROLE_MAP = Object.fromEntries(ROLES.map((r) => [r.key, r]));
 
-function senderLabel(sender: string, role: string): string {
-  if (sender === "user") return "You";
-  const roleKey = sender.replace("role:", "");
-  return ROLE_LABELS[roleKey] ?? ROLE_LABELS[role] ?? role;
-}
-
-function senderIcon(sender: string, role: string): string {
-  if (sender === "user") return "\u{1F464}";
-  const roleKey = sender.replace("role:", "");
-  return ROLE_ICONS[roleKey] ?? ROLE_ICONS[role] ?? "\u{1F916}";
-}
-
-function roleColorClass(sender: string, role: string): string {
-  if (sender === "user") return "role-user";
-  const roleKey = sender.replace("role:", "");
-  return `role-${roleKey}` || `role-${role}`;
+function senderInfo(sender: string, role: string) {
+  if (sender === "user") return { icon: "\u{1F464}", label: "You", color: "var(--text)" };
+  const key = sender.replace("role:", "");
+  return ROLE_MAP[key] ?? ROLE_MAP[role] ?? { icon: "\u{1F916}", label: role, color: "var(--text-soft)" };
 }
 
 export function GroupChat({ messages, onSend, activeSymbol }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [inputValue, setInputValue] = useState("");
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState("");
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length]);
+
+  function handleInputChange(value: string) {
+    setInputValue(value);
+    // Check if user just typed @ or @partial
+    const atMatch = value.match(/@(\w*)$/);
+    if (atMatch) {
+      setShowMentions(true);
+      setMentionFilter(atMatch[1].toLowerCase());
+    } else {
+      setShowMentions(false);
+    }
+  }
+
+  function insertMention(roleKey: string) {
+    const before = inputValue.replace(/@\w*$/, "");
+    setInputValue(`${before}@${roleKey} `);
+    setShowMentions(false);
+    inputRef.current?.focus();
+  }
+
+  const filteredRoles = ROLES.filter((r) => r.key.startsWith(mentionFilter) || r.label.toLowerCase().startsWith(mentionFilter));
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="panel-header">
-        <span>Desk Conversation {activeSymbol ? `\u2014 ${activeSymbol}` : ""}</span>
-        <span style={{ fontSize: 10, color: "var(--text-muted)" }} title="Use @research, @risk, @quant_pricing, or @trader to direct a message. Plain messages go to the trader.">
-          @mentions enabled
-        </span>
+        <span>Desk Chat {activeSymbol ? `\u2014 ${activeSymbol}` : ""}</span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Type @ to mention a role</span>
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
         {messages.length === 0 ? (
           <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 20, textAlign: "center" }}>
-            {activeSymbol ? "No conversation yet. Ask the desk something." : "Select an event to start a conversation."}
+            {activeSymbol ? "Ask the desk something, or type @ to pick a role." : "Select an event to start."}
           </div>
         ) : (
           messages.map((msg) => {
-            const isUser = msg.sender === "user";
+            const info = senderInfo(msg.sender, msg.role);
             const isQuery = msg.structured_payload?.type === "role_query";
             return (
               <div key={msg.id} style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                background: isUser ? "rgba(113, 217, 182, 0.06)" : isQuery ? "rgba(96, 165, 250, 0.06)" : "var(--bg-panel-soft)",
-                border: `1px solid ${isUser ? "rgba(113, 217, 182, 0.2)" : "var(--line)"}`,
+                padding: "8px 10px", borderRadius: 10,
+                background: msg.sender === "user" ? "rgba(113, 217, 182, 0.06)" : isQuery ? "rgba(96, 165, 250, 0.06)" : "var(--bg-panel-soft)",
+                border: `1px solid ${msg.sender === "user" ? "rgba(113, 217, 182, 0.15)" : "transparent"}`,
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                  <span className={roleColorClass(msg.sender, msg.role)} style={{ fontSize: 12, fontWeight: 600 }}>
-                    {senderIcon(msg.sender, msg.role)} {senderLabel(msg.sender, msg.role)}
-                    {isQuery && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> asked {ROLE_LABELS[msg.role] ?? msg.role}</span>}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: info.color }}>
+                    {info.icon} {info.label}
+                    {isQuery && <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>{" "}asked {ROLE_MAP[msg.role]?.label ?? msg.role}</span>}
                   </span>
-                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </span>
+                  <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{new Date(msg.timestamp).toLocaleTimeString()}</span>
                 </div>
-                <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{msg.message_text}</div>
-                {msg.structured_payload && Object.keys(msg.structured_payload).length > 1 && (
-                  <details style={{ marginTop: 6 }}>
-                    <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: 11 }}>Structured output</summary>
-                    <pre style={{ margin: "6px 0 0", whiteSpace: "pre-wrap", fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
-                      {JSON.stringify(msg.structured_payload, null, 2)}
-                    </pre>
-                  </details>
-                )}
+                <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{msg.message_text}</div>
               </div>
             );
           })
         )}
       </div>
 
-      {/* Input */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const fd = new FormData(e.currentTarget);
-          const val = String(fd.get("message") ?? "").trim();
-          if (!val) return;
-          onSend(val);
-          e.currentTarget.reset();
-        }}
-        style={{ padding: "8px 12px 12px", borderTop: "1px solid var(--line)", display: "flex", gap: 8 }}
-      >
-        <input
-          name="message"
-          placeholder={activeSymbol ? `Ask the desk about ${activeSymbol}...` : "Select an event first"}
-          disabled={!activeSymbol}
-          style={{
-            flex: 1, padding: "10px 14px", borderRadius: 10,
-            border: "1px solid var(--line)", background: "var(--bg)",
-            color: "var(--text)", fontSize: 13,
+      {/* Input with @ autocomplete */}
+      <div style={{ position: "relative", padding: "8px 12px 12px", borderTop: "1px solid var(--line)" }}>
+        {showMentions && filteredRoles.length > 0 && (
+          <div style={{
+            position: "absolute", bottom: "100%", left: 12, right: 12,
+            background: "var(--bg-panel)", border: "1px solid var(--line)",
+            borderRadius: 10, padding: 4, boxShadow: "var(--shadow)",
+          }}>
+            {filteredRoles.map((r) => (
+              <button
+                key={r.key}
+                onClick={() => insertMention(r.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, width: "100%",
+                  padding: "8px 10px", background: "transparent", border: "none",
+                  color: "var(--text)", cursor: "pointer", borderRadius: 6, fontSize: 13,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-panel-soft)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <span style={{ color: r.color }}>{r.icon}</span>
+                <span style={{ fontWeight: 600 }}>@{r.key}</span>
+                <span style={{ color: "var(--text-muted)" }}>{r.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const val = inputValue.trim();
+            if (!val) return;
+            onSend(val);
+            setInputValue("");
+            setShowMentions(false);
           }}
-        />
-        <button type="submit" className="btn btn-accent" disabled={!activeSymbol}>Send</button>
-      </form>
+          style={{ display: "flex", gap: 8 }}
+        >
+          <input
+            ref={inputRef}
+            value={inputValue}
+            onChange={(e) => handleInputChange(e.target.value)}
+            placeholder={activeSymbol ? `Message the desk about ${activeSymbol}...` : "Select an event first"}
+            disabled={!activeSymbol}
+            style={{
+              flex: 1, padding: "10px 14px", borderRadius: 10,
+              border: "1px solid var(--line)", background: "var(--bg)",
+              color: "var(--text)", fontSize: 13,
+            }}
+          />
+          <button type="submit" className="btn btn-accent" disabled={!activeSymbol}>Send</button>
+        </form>
+      </div>
     </div>
   );
 }

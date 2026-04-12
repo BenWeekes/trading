@@ -27,7 +27,7 @@ export const api = {
   discuss: (id: string, message: string) =>
     fetchJson<RoleMessage>(`/recs/${id}/discuss`, { method: "POST", body: JSON.stringify({ message }) }),
   readyForApproval: (id: string) => fetchJson(`/recs/${id}/ready`, { method: "POST" }),
-  approve: (id: string) => fetchJson(`/recs/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),
+  approve: (id: string, shares?: number) => fetchJson(`/recs/${id}/approve`, { method: "POST", body: JSON.stringify({ shares }) }),
   execute: (id: string) => fetchJson(`/recs/${id}/execute`, { method: "POST" }),
   reject: (id: string, reason: string) =>
     fetchJson(`/recs/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),

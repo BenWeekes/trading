@@ -24,10 +24,14 @@ class BaseRole:
         return thread
 
     def _config(self) -> dict:
+        from ..config import get_settings
+        settings = get_settings()
+        default_provider = "openai" if settings.openai_api_key else "mock"
+        default_model = settings.openai_model if settings.openai_api_key else "mock-v1"
         return get_role_config(self.role_name) or {
             "role_name": self.role_name,
-            "provider": "mock",
-            "default_model": "mock-v1",
+            "provider": default_provider,
+            "default_model": default_model,
             "escalation_model": None,
             "tool_permissions": [],
             "cost_budget_per_day": 5.0,

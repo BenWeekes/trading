@@ -36,6 +36,8 @@ export type Recommendation = {
   stop_logic?: string | null;
   target_price?: number | null;
   target_logic?: string | null;
+  position_size_shares?: number | null;
+  position_size_dollars?: number | null;
   conviction?: number | null;
 };
 

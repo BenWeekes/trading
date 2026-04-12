@@ -258,12 +258,113 @@ Both pushed to https://github.com/BenWeekes/trading
 
 ---
 
+## Phase 6: Fixes Round 3 (Session 2 continued, 2026-04-12)
+
+### Git Commits
+
+3. `e049898` — Fix approve/reject from feedback state, add sell endpoint, remove extra click (6 files)
+4. `43b3868` — Complete UI restructure: 3-column layout per user spec (5 files, 3 new components)
+5. `aaabdaf` — Switch to gpt-5.1, fix provider for Responses API (2 files)
+6. `7913d2e` — Fix duplicates, CORS errors, avatar panel cleanup (4 files)
+7. `7064420` — Fix PASS handling, chat send, @ keyboard nav, scanner dedup, title (8 files)
+8. `85ec13e` — Cap role responses to ~80 words, max 300 tokens (5 files)
+9. `00bae61` — Add role filter buttons to Desk Chat header (1 file)
+10. `9c578e2` — Integrate real Agora RTC for avatar video/audio (6 files)
+
+### Backend Fixes
+
+**Approve/Reject from feedback state** (`routes/recommendations.py`):
+- Approve now auto-transitions from `awaiting_user_feedback` through to `approved` (no extra "Ready" click)
+- Reject also works from `awaiting_user_feedback`
+- Approve accepts `{ shares }` and updates `position_size_shares` + `position_size_dollars`
+
+**Sell endpoint** (`routes/trades.py`):
+- `POST /api/trades/{id}/sell` — full or partial close
+- Calculates P&L, creates execution record, publishes SSE event
+- Handles partial sells (reduces shares) and full close (marks trade closed)
+
+**Scanner deduplication** (`services/scanner.py`):
+- Reuses existing recommendation for same symbol instead of creating duplicates
+- `_find_existing_rec()` helper checks for active recs before creating new ones
+- Both FMP and mock scan paths use this
+
+**Trader direction extraction** (`roles/orchestrator.py`):
+- `_extract_direction_from_text()` — parses BUY/SELL/SHORT/COVER/PASS from natural language
+- `_extract_conviction_from_text()` — parses "N/10" conviction scores
+- Uses trader's message text as thesis when no structured payload available
+- Fixes the root cause of everything showing as "PASS" — GPT-5.1 returns plain text, not JSON
+
+**Random event improvements** (`routes/scanner.py`):
+- Reuses existing recommendations for same symbol
+- Varied headline templates per event type (not generic "random event")
+- Only runs full analysis if rec is in analysable state
+
+**OpenAI provider dual-API support** (`adapters/llm/openai_provider.py`):
+- Auto-detects model: gpt-5+ uses `/v1/responses` API, gpt-4.x uses `/v1/chat/completions`
+- Builds proper user context from symbol, event, role outputs, user message
+- max_output_tokens capped at 300 to enforce brevity
+- Loads system prompts from versioned markdown files
+
+**Role prompts** (all 4 rewritten):
+- CRITICAL RULE: under 80 words enforced in all prompts
+- Trader: action + conviction + one sentence + prices + one invalidation
+- Research: beat quality + guidance + 1 catalyst + 1 counterpoint
+- Risk: top 2 risks + sizing + reject/accept
+- Quant: fair value + levels + vol regime
+
+**CORS fix** (`main.py`):
+- Global exception handler ensures CORS headers on 500 errors
+- Added `CORS_ORIGINS` to `.env`
+
+**Agora bridge rewrite** (`services/agora_bridge.py`):
+- Two-phase start: tokens first (connect=false), then agent start
+- Session stores appid, token, uid, agent_uid for frontend RTC join
+- Clean error handling on stop
+
+### Frontend Fixes
+
+**UI Restructure** (3 new components):
+- `InboxTabs` — left column with Events/Recommendations tabs, counts, pending badges
+- `TradePanel` — centre top with summary + buy controls + price levels + editable shares
+- `AvatarAndPositions` — right column with avatar + portfolio list + sell controls
+
+**PASS handling**:
+- PASS recs filtered from Recommendations tab
+- PASS badge shown on Events tab next to symbol
+- Recommendations tab count excludes PASS items
+
+**GroupChat improvements**:
+- @ keyboard navigation: Arrow Up/Down, Enter/Tab to select, Esc to close
+- Role filter buttons in header (📊 🛡 📈 💼 + All) — click to filter messages by role
+- Async send with "Thinking..." indicator
+- Active role filter highlighted with role color border
+
+**Bull/Bear truncation**:
+- One line by default (80 chars), expandable `<details>` for full text
+
+**Agora RTC integration**:
+- `useAgoraAvatar` hook: joins Agora RTC channel, subscribes to remote video/audio
+- Two-step UI flow: "Start Call" → "Join Call" → "End Call"
+- Avatar video plays directly in container div (no iframe)
+- Local microphone published for voice interaction
+- Status: Offline → Agent Ready → Live → Speaking
+
+**Other**:
+- Title changed to "AI Trading Platform"
+- gpt-5.1 model (was gpt-5.4 which didn't exist, then gpt-4.1)
+- Event deduplication in inbox (latest per symbol)
+- Removed status text below avatar panel
+
+---
+
 ## Remaining Issues
 
-1. **Agora avatar integration** — Current approach uses iframe which won't work for real calls. Need to embed the Agora RTC/RTM client directly (see agora-agent-samples react-video-client-avatar for reference). The simple-backend must be running on port 8082 with proper credentials.
+1. **Agora simple-backend must be running** on port 8082 with proper credentials for avatar to work. Without it, "Start Call" will fail with a connection error.
 
-2. **Sell endpoint not implemented** — Frontend has sell buttons wired but backend has no `/api/trades/{id}/close` or sell endpoint yet. Currently shows an alert.
+2. **Avatar video rendering** — the Agora RTC integration is wired but hasn't been tested with a live Agora backend. The video track plays into the container div, but if the agent profile doesn't include a video avatar, only audio will work.
 
-3. **Approve passes shares to backend but backend ignores them** — The `/api/recs/{id}/approve` route accepts `{ shares }` but doesn't update `position_size_shares` on the recommendation. Need to update the approve handler.
+3. **No RTM integration** — transcripts from the avatar conversation don't appear in the desk chat. Would need to add RTM subscription to pipe agent speech into the timeline.
 
-4. **State machine flow for users** — After analysis, rec goes to `awaiting_user_feedback`. User must click "Ready for Approval" to move to `awaiting_user_approval` before Approve button appears. This is correct per plan but may feel like an extra click. Consider auto-transitioning on first trader chat reply.
+4. **Sell endpoint is paper-only** — uses current_price from the trade record, not live market price. Would need FMP/Alpaca price lookup for accurate P&L.
+
+5. **No error toasts** — errors show as console.error or alert(). Should use a proper toast/notification system.

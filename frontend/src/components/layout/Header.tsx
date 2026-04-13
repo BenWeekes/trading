@@ -16,10 +16,14 @@ export function Header({ portfolioValue, mode, onScan }: Props) {
           width: 34, height: 34, borderRadius: 8,
           background: "linear-gradient(135deg, var(--accent), #60a5fa)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 700, fontSize: 15, color: "#fff",
-        }}>W</div>
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+            <polyline points="16 7 22 7 22 13" />
+          </svg>
+        </div>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>AI Trading Platform</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Trading Desk AI</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Multi-Role Trading Workstation</div>
         </div>
       </div>

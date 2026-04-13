@@ -199,8 +199,13 @@ export default function Page() {
 function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolean }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: 48 }}>
-      <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, var(--accent), #60a5fa)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#fff" }}>W</div>
-      <div style={{ fontSize: 20, fontWeight: 600 }}>AI Trading Platform</div>
+      <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, var(--accent), #60a5fa)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+          <polyline points="16 7 22 7 22 13" />
+        </svg>
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 600 }}>Trading Desk AI</div>
       <div style={{ color: "var(--text-soft)", maxWidth: 480, textAlign: "center", lineHeight: 1.7 }}>
         Multi-role AI trading desk with Research, Quant Pricing, Risk, and Trader.
         Scan for earnings events to get started.

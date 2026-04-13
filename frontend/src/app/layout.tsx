@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "AI Trading Platform",
+  title: "Trading Desk AI",
   description: "Multi-role trading workstation",
 };
 

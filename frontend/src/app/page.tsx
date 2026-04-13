@@ -21,7 +21,7 @@ export default function Page() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [timeline, setTimeline] = useState<RoleMessage[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
-  const [portfolioValue, setPortfolioValue] = useState<number | undefined>();
+  const [portfolio, setPortfolio] = useState<Record<string, unknown>>({});
   const [mode, setMode] = useState("paper");
   const [avatarStatus, setAvatarStatus] = useState<TraderAvatarStatus | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -36,7 +36,7 @@ export default function Page() {
     setEvents(ev.events);
     setRecommendations(rec.recommendations);
     setPositions(pos.positions);
-    setPortfolioValue(Number(port.portfolio_value ?? 0));
+    setPortfolio(port);
     setMode(String(port.status ?? "paper"));
     if (!didInit.current && rec.recommendations.length > 0) {
       setActiveRec(rec.recommendations[0]);
@@ -181,7 +181,14 @@ export default function Page() {
 
   return (
     <main className="workstation">
-      <Header portfolioValue={portfolioValue} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
+      <Header portfolio={{
+        portfolio_value: Number(portfolio.portfolio_value ?? 0),
+        cash: Number(portfolio.cash ?? 0),
+        unrealised_pnl: Number(portfolio.unrealised_pnl ?? portfolio.unrealized_pnl ?? 0),
+        daily_change: Number(portfolio.daily_change ?? 0),
+        daily_change_pct: Number(portfolio.daily_change_pct ?? 0),
+        open_positions: Number(portfolio.open_positions ?? 0),
+      }} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
       {!hasContent ? (
         <EmptyState onScan={onScan} scanning={scanning} />
       ) : (

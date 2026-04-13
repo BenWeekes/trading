@@ -1,16 +1,31 @@
+type PortfolioData = {
+  portfolio_value?: number;
+  cash?: number;
+  unrealised_pnl?: number;
+  daily_change?: number;
+  daily_change_pct?: number;
+  open_positions?: number;
+};
+
 type Props = {
-  portfolioValue?: number;
+  portfolio?: PortfolioData;
   mode?: string;
   onScan?: () => void;
   onSettings?: () => void;
   onHelp?: () => void;
 };
 
-export function Header({ portfolioValue, mode, onScan, onSettings, onHelp }: Props) {
+export function Header({ portfolio, mode, onScan, onSettings, onHelp }: Props) {
+  const value = portfolio?.portfolio_value;
+  const cash = portfolio?.cash;
+  const pnl = portfolio?.daily_change ?? 0;
+  const pnlPct = portfolio?.daily_change_pct ?? 0;
+  const pnlColor = pnl >= 0 ? "var(--buy)" : "var(--sell)";
+
   return (
     <header style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "14px 20px", borderBottom: "1px solid var(--line)",
+      padding: "12px 20px", borderBottom: "1px solid var(--line)",
       background: "linear-gradient(180deg, rgba(15, 25, 40, 0.95), rgba(8, 17, 31, 0.95))",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -35,13 +50,13 @@ export function Header({ portfolioValue, mode, onScan, onSettings, onHelp }: Pro
         {onSettings && <button className="btn" onClick={onSettings}>Settings</button>}
         {onHelp && <button className="btn" onClick={onHelp}>Help</button>}
 
-        <div style={{ height: 20, width: 1, background: "var(--line)", margin: "0 4px" }} />
+        <div style={{ height: 24, width: 1, background: "var(--line)", margin: "0 6px" }} />
 
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Portfolio</div>
-          <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-            {typeof portfolioValue === "number" ? `$${portfolioValue.toLocaleString()}` : "..."}
-          </div>
+        {/* Portfolio summary */}
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <Stat label="Portfolio" value={value != null ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "..."} />
+          <Stat label="Cash" value={cash != null ? `$${cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "..."} />
+          <Stat label="P&L" value={`${pnl >= 0 ? "+" : ""}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} valueColor={pnlColor} sub={`${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%`} />
         </div>
 
         <span className="badge badge-accent" style={{ fontSize: 11, padding: "4px 10px" }}>
@@ -49,5 +64,15 @@ export function Header({ portfolioValue, mode, onScan, onSettings, onHelp }: Pro
         </span>
       </div>
     </header>
+  );
+}
+
+function Stat({ label, value, valueColor, sub }: { label: string; value: string; valueColor?: string; sub?: string }) {
+  return (
+    <div style={{ textAlign: "right" }}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: valueColor }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: valueColor ?? "var(--text-muted)" }}>{sub}</div>}
+    </div>
   );
 }

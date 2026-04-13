@@ -16,11 +16,13 @@ from ..db.repositories import (
     upsert_recommendation,
 )
 from ..adapters.alpaca import AlpacaAdapter
+from ..adapters.fmp import FMPClient
 from ..roles import Orchestrator
 from ..services.event_bus import event_bus
 from ..services.state_machine import ensure_transition
 
 alpaca = AlpacaAdapter()
+_fmp = FMPClient()
 
 
 router = APIRouter(prefix="/api/recs", tags=["recommendations"])
@@ -180,7 +182,15 @@ async def execute(recommendation_id: str):
     upsert_recommendation(recommendation)
 
     shares = recommendation.get("position_size_shares") or 0
+
+    # Try to get live market price for execution
     exec_price = recommendation.get("entry_price") or 0
+    try:
+        quote = await _fmp.quote(recommendation["symbol"])
+        if quote and quote.get("price"):
+            exec_price = float(quote["price"])
+    except Exception:
+        pass  # fall back to recommendation entry price
 
     if direction in ("SELL", "COVER"):
         # Close or reduce an existing position

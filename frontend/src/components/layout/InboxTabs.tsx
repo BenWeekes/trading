@@ -17,6 +17,10 @@ function recForSymbol(recs: Recommendation[], symbol?: string | null): Recommend
 
 const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
 
+const DIR_COLORS: Record<string, string> = {
+  BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
+};
+
 export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent, onSelectRecommendation }: Props) {
   const [tab, setTab] = useState<"events" | "recs">("events");
   const pendingCount = recommendations.filter((r) => PENDING.has(r.status) && r.direction && r.direction !== "PASS").length;
@@ -49,19 +53,20 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {deduped.map((ev) => {
                 const rec = recForSymbol(recommendations, ev.symbol);
-                const isPassed = rec?.direction === "PASS";
+                const dir = rec?.direction;
+                const dirColor = DIR_COLORS[dir ?? ""] ?? "var(--text-muted)";
                 return (
                   <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ fontSize: 13 }}>{ev.symbol ?? ev.type.toUpperCase()}</strong>
-                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        {isPassed && <span className="badge badge-muted">PASS</span>}
-                        <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                          {new Date(ev.timestamp).toLocaleTimeString()}
-                        </span>
+                      <strong style={{ fontSize: 13 }}>
+                        {ev.symbol ?? ev.type.toUpperCase()}
+                        {dir && <span style={{ color: dirColor, fontWeight: 600 }}>: {dir}</span>}
+                      </strong>
+                      <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                        {new Date(ev.timestamp).toLocaleTimeString()}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.headline}</div>
                   </InboxItem>
                 );
               })}
@@ -78,13 +83,15 @@ export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent
                 .map((rec) => (
                   <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ fontSize: 13 }}>{rec.direction ?? "WATCH"} {rec.symbol}</strong>
+                      <strong style={{ fontSize: 13 }}>
+                        {rec.symbol}<span style={{ color: DIR_COLORS[rec.direction ?? ""] ?? "var(--text-muted)" }}>: {rec.direction ?? "WATCH"}</span>
+                      </strong>
                       <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {rec.conviction ? `${rec.conviction}/10` : ""}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>
-                      {rec.thesis ? (rec.thesis.length > 80 ? rec.thesis.slice(0, 80) + "..." : rec.thesis) : rec.strategy_type}
+                    <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                      {rec.thesis ?? rec.strategy_type}
                     </div>
                   </InboxItem>
                 ))}

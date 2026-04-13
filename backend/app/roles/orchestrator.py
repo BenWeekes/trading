@@ -4,6 +4,7 @@ import asyncio
 import re
 
 from ..db.helpers import new_id, utcnow_iso
+from ..services.position_sizing import calculate_position, conviction_multiplier
 from ..db.repositories import (
     get_recommendation,
     get_role_thread,
@@ -123,14 +124,25 @@ class Orchestrator:
         if conviction is None:
             conviction = self._extract_conviction_from_text(text)
 
+        # Recalculate position size based on conviction
+        entry = self._read_numeric(payload, "entry_price") or recommendation.get("entry_price") or 0
+        if entry and conviction and direction not in ("PASS", None):
+            sized = calculate_position(float(entry), 100000.0, conviction)
+            pos_shares = sized["position_size_shares"]
+            pos_dollars = sized["position_size_dollars"]
+            size_note = sized.get("size_note", "")
+        else:
+            pos_shares = recommendation.get("position_size_shares")
+            pos_dollars = recommendation.get("position_size_dollars")
+            size_note = ""
+
         recommendation.update(
             {
                 "direction": direction,
                 "status": "awaiting_user_feedback",
                 "thesis": payload.get("thesis") or text[:300] or recommendation.get("thesis"),
-                "entry_price": self._read_numeric(payload, "entry_price")
-                or recommendation.get("entry_price"),
-                "entry_logic": payload.get("entry_logic"),
+                "entry_price": entry or recommendation.get("entry_price"),
+                "entry_logic": payload.get("entry_logic") or size_note or recommendation.get("entry_logic"),
                 "target_price": self._read_numeric(payload, "target_price")
                 or recommendation.get("target_price"),
                 "target_logic": payload.get("target_logic"),
@@ -138,6 +150,8 @@ class Orchestrator:
                 or recommendation.get("stop_price"),
                 "stop_logic": payload.get("stop_logic"),
                 "conviction": conviction,
+                "position_size_shares": pos_shares,
+                "position_size_dollars": pos_dollars,
                 "supporting_roles": ["research", "quant_pricing"],
                 "blocking_risks": ["Sizing caution"],
                 "updated_at": utcnow_iso(),

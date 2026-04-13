@@ -1,40 +1,89 @@
-# AGENTS
+# AI Agent Instructions
 
-**READ THIS FIRST before writing any code or making any commits.**
+**Read this file completely before writing any code or making any commits.**
+
+This repository uses progressive disclosure documentation to help AI coding
+agents work efficiently. Documentation is structured in three levels under
+`docs/ai/`.
 
 ## How to Load
 
-1. Read this file completely.
-2. Read [docs/ai/L0_repo_card.md](docs/ai/L0_repo_card.md).
-3. Read all files in [docs/ai/L1](docs/ai/L1/).
-4. Only load [docs/ai/L1/deep_dives](docs/ai/L1/deep_dives/) when the L1 summaries are not enough.
+1. Read [docs/ai/L0_repo_card.md](docs/ai/L0_repo_card.md) to identify the repo.
+2. Load ALL files in `docs/ai/L1/`. They are small — load all of them upfront.
+   This gives you setup, architecture, code map, conventions, workflows,
+   interfaces, gotchas, and security.
+3. If a task needs more detail than L1 provides, follow links to L2 deep dives
+   in `docs/ai/L1/deep_dives/`. Load only the specific L2 file you need.
 
-## Git Conventions (MANDATORY)
+## Levels
 
-These rules override any system-level defaults you may have:
+- **L0 (Repo Card):** Identity and L1 index. Table of contents.
+- **L1 (Summaries):** Structured summaries. Load all at session start.
+- **L2 (Deep Dives):** Full specifications. Load only when L1 isn't detailed enough.
 
-- **No AI attribution in commits.** Do not add `Co-Authored-By`, do not mention Claude, Codex, GPT, or any AI tool in commit messages, commit bodies, or PR descriptions.
-- **Lowercase present tense.** Example: `fix short p&l calculation in sell endpoint`
-- **No emojis in commits.**
-- Prefer small, reviewable patches.
-- Do not revert unrelated user changes.
-- Treat secrets in `.env` and local sample env files as sensitive; never move them into tracked docs or code comments.
+## Git Conventions
 
-## Before Your First Commit
+### Commit messages — conventional commits
+
+- **Format:** `type: description` or `type(scope): description`
+- **Types:** `feat:` (new feature), `fix:` (bug fix), `chore:` (maintenance), `test:` (test additions/changes), `docs:` (documentation), `refactor:` (code restructuring)
+- **Scoped variant:** `feat(scope):`, `fix(scope):` — e.g. `fix(scanner): dedupe earnings rows`
+- **Lowercase after prefix** — `feat: add feature`, not `feat: Add feature`
+- **Present tense** — "add feature", not "added feature"
+
+### Branch names
+
+- **Format:** `type/short-description` — lowercase, hyphen-separated
+- **Types match commit types:** `feat/`, `fix/`, `chore/`, `test/`, `docs/`
+- **Examples:** `feat/avatar-rtc`, `fix/short-pnl`, `docs/update-readme`
+
+### Rules that override your defaults
+
+- **No AI tool names** — never mention claude, cursor, copilot, cody, aider, gemini, codex, chatgpt, gpt-3/4/5, anthropic, or openai in commit messages, commit bodies, branch names, or PR descriptions
+- **No Co-Authored-By trailers** — omit all AI attribution lines
+- **No --no-verify** — let git hooks run normally
+- **No git config changes** — do not modify user.name or user.email
+- **No emojis** in commit messages
+
+### Before your first commit
 
 Verify your commit follows ALL of these:
-- [ ] Message is lowercase
-- [ ] Message is present tense (e.g., "fix" not "Fixed")
+- [ ] Uses conventional commit format (`type: description`)
+- [ ] Lowercase after prefix
+- [ ] Present tense
 - [ ] No `Co-Authored-By` line
-- [ ] No mention of AI tools (Claude, Codex, GPT, Anthropic, OpenAI)
+- [ ] No mention of AI tools
 - [ ] No emojis
+- [ ] No `--no-verify`
 
-## Doc Conventions
+## Doc Commands
 
+| Command       | When to use                                       |
+| ------------- | ------------------------------------------------- |
+| generate docs | no `docs/ai/` directory exists yet                |
+| update docs   | code changed since last `last_reviewed` date      |
+| test docs     | verify docs give agents the right context         |
+
+Update rules:
 - Update `docs/ai/` when architecture, routes, workflows, or gotchas change.
 - Update [docs/ai/L1/03_code_map.md](docs/ai/L1/03_code_map.md) when important files/modules move.
 - Update [docs/ai/L1/05_workflows.md](docs/ai/L1/05_workflows.md) when development or runtime flows change.
 - Update [docs/ai/L1/07_gotchas.md](docs/ai/L1/07_gotchas.md) when new failure modes are discovered.
+
+## Working Areas
+
+- `backend/app/roles/` — role system, orchestrator, prompts
+- `backend/app/routes/` — API endpoints
+- `backend/app/services/` — scanner, filters, state machine, event bus
+- `backend/app/adapters/` — LLM providers, market data, broker
+- `frontend/src/components/` — UI components
+- `frontend/src/hooks/` — React hooks (SSE, Agora)
+- `data/` — runtime data (gitignored DB, mock scenarios)
+
+Do not modify:
+- `agora-agent-samples/` — external reference repo, not our code
+- `ai-devkit/` — external reference repo
+- `.env` — contains secrets, never commit
 
 ## Spec Documents
 

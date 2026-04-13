@@ -489,3 +489,26 @@ def list_costs() -> list[dict]:
         return conn.execute(
             "SELECT * FROM cost_log ORDER BY timestamp DESC LIMIT 500"
         ).fetchall()
+
+
+# ── Strategy Settings ──
+
+def get_all_strategy_settings() -> dict[str, str]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT key, value FROM strategy_settings").fetchall()
+    return {row["key"]: row["value"] for row in rows}
+
+
+def get_strategy_setting(key: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT value FROM strategy_settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def set_strategy_setting(key: str, value: str) -> None:
+    from .helpers import utcnow_iso
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO strategy_settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, value, utcnow_iso()),
+        )

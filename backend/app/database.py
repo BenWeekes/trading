@@ -176,6 +176,12 @@ CREATE TABLE IF NOT EXISTS cost_log (
     cost_usd REAL NOT NULL,
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS strategy_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

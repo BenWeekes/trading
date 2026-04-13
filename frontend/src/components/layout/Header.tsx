@@ -2,9 +2,10 @@ type Props = {
   portfolioValue?: number;
   mode?: string;
   onScan?: () => void;
+  onSettings?: () => void;
 };
 
-export function Header({ portfolioValue, mode, onScan }: Props) {
+export function Header({ portfolioValue, mode, onScan, onSettings }: Props) {
   return (
     <header style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -30,6 +31,7 @@ export function Header({ portfolioValue, mode, onScan }: Props) {
 
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         {onScan && <button className="btn btn-accent" onClick={onScan}>Scan Earnings</button>}
+        {onSettings && <button className="btn" onClick={onSettings}>Settings</button>}
 
         <div style={{ height: 20, width: 1, background: "var(--line)", margin: "0 4px" }} />
 

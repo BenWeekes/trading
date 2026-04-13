@@ -54,6 +54,9 @@ export const api = {
       body: JSON.stringify({ recommendation_id: recommendationId }),
     }),
   positions: () => fetchJson<{ positions: Position[] }>("/positions"),
+  settings: () => fetchJson<{ settings: Record<string, string>; groups: { id: string; label: string; keys: string[] }[] }>("/settings"),
+  updateSettings: (updates: Record<string, string>) =>
+    fetchJson<{ updated: Record<string, string> }>("/settings", { method: "PATCH", body: JSON.stringify(updates) }),
   sellTrade: (tradeId: string, shares: number) =>
     fetchJson<{ trade: unknown; pnl: number; shares_sold: number }>(`/trades/${tradeId}/sell`, {
       method: "POST", body: JSON.stringify({ shares }),

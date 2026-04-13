@@ -8,6 +8,7 @@ import { TradePanel } from "@/components/trades/TradePanel";
 import { GroupChat } from "@/components/roles/GroupChat";
 import { AvatarAndPositions } from "@/components/trades/AvatarAndPositions";
 import { ToastContainer, toast } from "@/components/shared/Toast";
+import { SettingsPanel } from "@/components/shared/SettingsPanel";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
 import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
@@ -23,6 +24,7 @@ export default function Page() {
   const [mode, setMode] = useState("paper");
   const [avatarStatus, setAvatarStatus] = useState<TraderAvatarStatus | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const didInit = useRef(false);
 
   const load = useCallback(async () => {
@@ -144,7 +146,7 @@ export default function Page() {
 
   return (
     <main className="workstation">
-      <Header portfolioValue={portfolioValue} mode={mode} onScan={scanning ? undefined : onScan} />
+      <Header portfolioValue={portfolioValue} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} />
       {!hasContent ? (
         <EmptyState onScan={onScan} scanning={scanning} />
       ) : (
@@ -191,6 +193,7 @@ export default function Page() {
           </div>
         </div>
       )}
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
     </main>
   );

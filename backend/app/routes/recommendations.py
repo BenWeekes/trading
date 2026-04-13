@@ -15,9 +15,12 @@ from ..db.repositories import (
     update_trade,
     upsert_recommendation,
 )
+from ..adapters.alpaca import AlpacaAdapter
 from ..roles import Orchestrator
 from ..services.event_bus import event_bus
 from ..services.state_machine import ensure_transition
+
+alpaca = AlpacaAdapter()
 
 
 router = APIRouter(prefix="/api/recs", tags=["recommendations"])
@@ -215,6 +218,28 @@ async def execute(recommendation_id: str):
             raise HTTPException(status_code=400, detail=f"No open position to {direction.lower()} for {recommendation['symbol']}")
     else:
         # BUY or SHORT — open a new position
+        # Try Alpaca first, fall back to paper simulation
+        broker_order_id = new_id("broker")
+        broker_response: dict = {"paper": True, "action": direction.lower()}
+
+        if alpaca.is_configured():
+            try:
+                side = "buy" if direction == "BUY" else "sell"  # Alpaca: sell = short
+                order = await alpaca.submit_order(
+                    symbol=recommendation["symbol"],
+                    qty=shares,
+                    side=side,
+                    take_profit=recommendation.get("target_price"),
+                    stop_loss=recommendation.get("stop_price"),
+                )
+                broker_order_id = order.get("id", broker_order_id)
+                broker_response = order
+                # Use fill price from order if available
+                if order.get("filled_avg_price"):
+                    exec_price = float(order["filled_avg_price"])
+            except Exception as exc:
+                broker_response = {"error": str(exc), "paper_fallback": True}
+
         trade_id = new_id("trade")
         insert_trade({
             "id": trade_id, "recommendation_id": recommendation_id,
@@ -225,15 +250,15 @@ async def execute(recommendation_id: str):
             "target_price": recommendation.get("target_price"),
             "exit_price": None, "exit_reason": None,
             "pnl_dollars": None, "pnl_percent": None,
-            "risk_state": "normal", "broker_order_id": new_id("broker"),
+            "risk_state": "normal", "broker_order_id": broker_order_id,
             "opened_at": now, "closed_at": None,
         })
         insert_execution({
             "id": new_id("exec"), "recommendation_id": recommendation_id, "trade_id": trade_id,
             "order_type": f"paper_{direction.lower()}", "submitted_at": now, "filled_at": now,
             "fill_price": exec_price, "fill_qty": shares,
-            "broker_order_id": new_id("broker"),
-            "broker_response": {"paper": True, "action": direction.lower()},
+            "broker_order_id": broker_order_id,
+            "broker_response": broker_response,
             "status": "filled",
         })
 

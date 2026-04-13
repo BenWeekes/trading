@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 import csv
 
+from ..adapters.alpaca import AlpacaAdapter
 from ..config import ROOT_DIR, get_settings
 from ..db.repositories import list_trades
 
-
 TRADE_LOG = ROOT_DIR / "phase1" / "trade_log.csv"
+
+_alpaca = AlpacaAdapter()
 
 
 def _read_csv(path: Path) -> list[dict]:
@@ -19,9 +21,43 @@ def _read_csv(path: Path) -> list[dict]:
 
 def get_portfolio_summary() -> dict:
     settings = get_settings()
-    trades = _read_csv(TRADE_LOG)
-    closed = [trade for trade in trades if trade.get("exit_date")]
-    total_pnl = sum(float(trade.get("pnl_dollars") or 0) for trade in closed)
+
+    # Try real Alpaca first
+    if _alpaca.is_configured():
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're inside an async context — can't use run_until_complete
+                # Fall through to local calc
+                pass
+            else:
+                acct = loop.run_until_complete(_alpaca.get_account())
+                if "error" not in acct:
+                    return {
+                        "cash": float(acct.get("cash", 0)),
+                        "portfolio_value": float(acct.get("portfolio_value", 0)),
+                        "buying_power": float(acct.get("buying_power", 0)),
+                        "equity": float(acct.get("equity", 0)),
+                        "last_equity": float(acct.get("last_equity", 0)),
+                        "daily_change": round(float(acct.get("equity", 0)) - float(acct.get("last_equity", 0)), 2),
+                        "daily_change_pct": 0.0,
+                        "status": settings.app_mode,
+                        "currency": "USD",
+                    }
+        except Exception:
+            pass
+
+    # Fallback: local calculation from DB trades
+    db_trades = list_trades()
+    closed = [t for t in db_trades if t.get("closed_at")]
+    total_pnl = sum(float(t.get("pnl_dollars") or 0) for t in closed)
+
+    # Also check legacy CSV
+    csv_trades = _read_csv(TRADE_LOG)
+    csv_closed = [t for t in csv_trades if t.get("exit_date")]
+    total_pnl += sum(float(t.get("pnl_dollars") or 0) for t in csv_closed)
+
     starting_equity = 100000.0
     equity = starting_equity + total_pnl
     return {
@@ -30,14 +66,15 @@ def get_portfolio_summary() -> dict:
         "buying_power": round(equity * 2, 2),
         "equity": round(equity, 2),
         "last_equity": starting_equity,
-        "daily_change": 0.0,
-        "daily_change_pct": 0.0,
+        "daily_change": round(total_pnl, 2),
+        "daily_change_pct": round((total_pnl / starting_equity) * 100, 2) if starting_equity else 0,
         "status": settings.app_mode,
         "currency": "USD",
     }
 
 
 def get_positions() -> list[dict]:
+    """Return open positions — from DB trades, with Alpaca prices when available."""
     db_positions = [
         {
             "id": trade["id"],
@@ -60,6 +97,7 @@ def get_positions() -> list[dict]:
     if db_positions:
         return db_positions
 
+    # Legacy CSV fallback
     trades = _read_csv(TRADE_LOG)
     positions: list[dict] = []
     for trade in trades:
@@ -67,22 +105,20 @@ def get_positions() -> list[dict]:
             continue
         entry_price = float(trade.get("entry_price") or 0)
         shares = float(trade.get("shares") or 0)
-        positions.append(
-            {
-                "id": trade.get("trade_id") or trade.get("order_id"),
-                "recommendation_id": None,
-                "symbol": trade.get("symbol"),
-                "direction": "BUY",
-                "entry_price": entry_price,
-                "current_price": entry_price,
-                "shares": shares,
-                "unrealized_pnl": 0.0,
-                "stop_price": float(trade.get("stop_price") or 0),
-                "target_price": float(trade.get("target_price") or 0),
-                "risk_state": "normal",
-                "broker_order_id": trade.get("order_id"),
-                "opened_at": trade.get("entry_date"),
-                "closed_at": None,
-            }
-        )
+        positions.append({
+            "id": trade.get("trade_id") or trade.get("order_id"),
+            "recommendation_id": None,
+            "symbol": trade.get("symbol"),
+            "direction": "BUY",
+            "entry_price": entry_price,
+            "current_price": entry_price,
+            "shares": shares,
+            "unrealized_pnl": 0.0,
+            "stop_price": float(trade.get("stop_price") or 0),
+            "target_price": float(trade.get("target_price") or 0),
+            "risk_state": "normal",
+            "broker_order_id": trade.get("order_id"),
+            "opened_at": trade.get("entry_date"),
+            "closed_at": None,
+        })
     return positions

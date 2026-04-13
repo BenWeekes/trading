@@ -2,10 +2,9 @@ type Props = {
   portfolioValue?: number;
   mode?: string;
   onScan?: () => void;
-  onRandomEvent?: () => void;
 };
 
-export function Header({ portfolioValue, mode, onScan, onRandomEvent }: Props) {
+export function Header({ portfolioValue, mode, onScan }: Props) {
   return (
     <header style={{
       display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -21,13 +20,12 @@ export function Header({ portfolioValue, mode, onScan, onRandomEvent }: Props) {
         }}>W</div>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>AI Trading Platform</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>AI Trading Workstation</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Multi-Role Trading Workstation</div>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        {onScan && <button className="btn" onClick={onScan}>Scan</button>}
-        {onRandomEvent && <button className="btn" onClick={onRandomEvent}>Random Event</button>}
+        {onScan && <button className="btn btn-accent" onClick={onScan}>Scan Earnings</button>}
 
         <div style={{ height: 20, width: 1, background: "var(--line)", margin: "0 4px" }} />
 

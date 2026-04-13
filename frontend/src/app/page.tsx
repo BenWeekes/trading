@@ -46,6 +46,14 @@ export default function Page() {
 
   useEffect(() => { load().catch(console.error); }, [load]);
 
+  // Refresh position prices every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      api.positions(true).then((d) => setPositions(d.positions)).catch(console.error);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const activeRecId = activeRec?.id;
   useEffect(() => {
     if (!activeRecId) return;
@@ -193,6 +201,18 @@ export default function Page() {
               summary={summary}
               onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
               onApprove={onApprove}
+              onApproveAndExecute={async (shares) => {
+                if (!activeRec) return;
+                try {
+                  await api.readyForApproval(activeRec.id).catch(() => {});
+                  await api.approve(activeRec.id, shares);
+                  await api.execute(activeRec.id);
+                  toast(`Executed ${activeRec.direction} ${activeRec.symbol} — ${shares} shares`, "success");
+                  await load();
+                } catch (err) {
+                  toast("Approve & execute failed: " + (err instanceof Error ? err.message : ""), "error");
+                }
+              }}
               onExecute={onExecute}
               onReject={onReject}
             />

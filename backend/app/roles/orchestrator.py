@@ -124,13 +124,21 @@ class Orchestrator:
         if conviction is None:
             conviction = self._extract_conviction_from_text(text)
 
-        # Recalculate position size based on conviction
+        # Recalculate position size based on conviction AND risk's sizing recommendation
         entry = self._read_numeric(payload, "entry_price") or recommendation.get("entry_price") or 0
         if entry and conviction and direction not in ("PASS", None):
             sized = calculate_position(float(entry), 100000.0, conviction)
             pos_shares = sized["position_size_shares"]
             pos_dollars = sized["position_size_dollars"]
             size_note = sized.get("size_note", "")
+
+            # Apply risk's sizing reduction if available
+            risk_sizing = risk_msg.get("structured_payload", {}).get("position_size_recommendation")
+            if risk_sizing and isinstance(risk_sizing, (int, float)) and 0 < risk_sizing < 1:
+                import math
+                pos_shares = math.floor(pos_shares * risk_sizing * 100) / 100
+                pos_dollars = round(pos_shares * float(entry), 2)
+                size_note += f" Risk scaled to {risk_sizing:.0%}."
         else:
             pos_shares = recommendation.get("position_size_shares")
             pos_dollars = recommendation.get("position_size_dollars")

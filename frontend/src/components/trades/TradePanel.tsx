@@ -8,6 +8,7 @@ type Props = {
   summary?: Summary | null;
   onReady: () => void;
   onApprove: (shares: number) => void;
+  onApproveAndExecute: (shares: number) => void;
   onExecute: () => void;
   onReject: () => void;
 };
@@ -21,7 +22,7 @@ const ACTION_TIPS: Record<string, string> = {
   COVER: "Close a short position", PASS: "No action — best move is to wait",
 };
 
-export function TradePanel({ recommendation, summary, onReady, onApprove, onExecute, onReject }: Props) {
+export function TradePanel({ recommendation, summary, onReady, onApprove, onApproveAndExecute, onExecute, onReject }: Props) {
   const rec = recommendation;
   const [shares, setShares] = useState(rec?.position_size_shares ?? 10);
 
@@ -105,8 +106,10 @@ export function TradePanel({ recommendation, summary, onReady, onApprove, onExec
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {canReady && <button className="btn btn-accent" onClick={onReady}>Ready for Approval</button>}
-          {canApprove && <button className="btn btn-accent" onClick={() => onApprove(shares)}>Approve{action !== "PASS" ? ` (${shares} sh)` : ""}</button>}
+          {canReady && <button className="btn btn-accent" onClick={() => onApproveAndExecute(shares)}>Approve & Execute ({shares} sh)</button>}
+          {canReady && <button className="btn" onClick={onReady}>Ready (no execute)</button>}
+          {canApprove && <button className="btn btn-accent" onClick={() => { onApprove(shares); setTimeout(onExecute, 500); }}>Approve & Execute ({shares} sh)</button>}
+          {canApprove && <button className="btn" onClick={() => onApprove(shares)}>Approve Only</button>}
           {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute Order</button>}
           {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}
         </div>

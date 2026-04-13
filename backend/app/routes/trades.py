@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from ..adapters.fmp import FMPClient
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_trade, insert_execution, list_executions, list_trades, update_trade
 from ..services.event_bus import event_bus
 from ..services.portfolio import get_portfolio_summary, get_positions
+
+_fmp = FMPClient()
 
 
 router = APIRouter(prefix="/api", tags=["trades"])
@@ -17,8 +20,32 @@ async def portfolio():
 
 
 @router.get("/positions")
-async def positions():
-    return {"positions": get_positions()}
+async def positions(refresh_prices: bool = False):
+    pos_list = get_positions()
+    if refresh_prices and pos_list:
+        # Fetch live quotes for open positions
+        for pos in pos_list:
+            symbol = pos.get("symbol")
+            if not symbol:
+                continue
+            try:
+                quote = await _fmp.quote(symbol)
+                if quote and quote.get("price"):
+                    live_price = float(quote["price"])
+                    entry = float(pos.get("entry_price") or live_price)
+                    direction = (pos.get("direction") or "BUY").upper()
+                    if direction in ("SHORT",):
+                        pnl = (entry - live_price) * float(pos.get("shares") or 0)
+                    else:
+                        pnl = (live_price - entry) * float(pos.get("shares") or 0)
+                    pos["current_price"] = live_price
+                    pos["unrealized_pnl"] = round(pnl, 2)
+                    # Update in DB too
+                    if pos.get("id"):
+                        update_trade(pos["id"], current_price=live_price, unrealized_pnl=round(pnl, 2))
+            except Exception:
+                pass
+    return {"positions": pos_list}
 
 
 @router.get("/trades")

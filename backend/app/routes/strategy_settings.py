@@ -21,11 +21,14 @@ DEFAULTS: dict[str, str] = {
     "exclude_spacs": "true",
     "exclude_biotech_binary": "true",
 
-    # PEAD entry conditions
-    "min_surprise_pct": "5.0",
+    # PEAD V2 entry conditions
+    "min_surprise_pct": "10.0",
+    "min_revenue_surprise_pct": "1.0",
+    "require_revenue_beat": "true",
     "min_volume_ratio": "2.0",
     "require_positive_guidance": "true",
     "require_no_negative_news": "true",
+    "max_candidates_per_scan": "2",
 
     # Position sizing & risk
     "risk_per_trade_pct": "1.0",
@@ -43,7 +46,7 @@ DEFAULTS: dict[str, str] = {
     "conviction_7_multiplier": "0.75",
 
     # Hold period
-    "target_hold_days": "12",
+    "target_hold_days": "10",
     "max_hold_days": "30",
     "exit_before_next_earnings": "true",
 
@@ -82,7 +85,8 @@ GROUPS = [
     {
         "id": "pead_entry",
         "label": "PEAD Entry Conditions",
-        "keys": ["min_surprise_pct", "min_volume_ratio", "require_positive_guidance", "require_no_negative_news"],
+        "keys": ["min_surprise_pct", "min_revenue_surprise_pct", "require_revenue_beat",
+                 "min_volume_ratio", "require_positive_guidance", "require_no_negative_news", "max_candidates_per_scan"],
     },
     {
         "id": "risk",

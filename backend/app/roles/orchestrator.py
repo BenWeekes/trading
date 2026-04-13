@@ -124,6 +124,41 @@ class Orchestrator:
         if conviction is None:
             conviction = self._extract_conviction_from_text(text)
 
+        # ── Phase 2: Role-guided gating ──
+
+        # Risk veto is BINDING — overrides trader recommendation
+        risk_payload = risk_msg.get("structured_payload", {})
+        risk_rejects = risk_payload.get("reject_recommendation") or risk_payload.get("reject_or_reduce") == "reject"
+        risk_veto_text = self._check_risk_veto(risk_msg.get("message_text", ""))
+        if risk_rejects or risk_veto_text:
+            direction = "PASS"
+            conviction = 0
+            veto_reason = risk_payload.get("reject_reason") or risk_veto_text or "Risk veto"
+            await event_bus.publish("role_message", {
+                "id": new_id("msg"), "role": "system", "sender": "system",
+                "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
+                "message_text": f"Risk VETO: {veto_reason}. Trade blocked.",
+                "structured_payload": {"type": "risk_veto"}, "timestamp": utcnow_iso(),
+            })
+
+        # Research quality downgrade reduces conviction by 2 points
+        research_payload = research_msg.get("structured_payload", {})
+        beat_quality = research_payload.get("beat_quality", "")
+        if beat_quality in ("ONE_OFF", "ACCOUNTING") and conviction and conviction > 0:
+            conviction = max(conviction - 2, 0)
+            await event_bus.publish("role_message", {
+                "id": new_id("msg"), "role": "system", "sender": "system",
+                "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
+                "message_text": f"Research flagged beat quality as {beat_quality}. Conviction reduced to {conviction}/10.",
+                "structured_payload": {"type": "research_downgrade"}, "timestamp": utcnow_iso(),
+            })
+
+        # Quant must have coherent plan — if no entry/stop/target, downgrade
+        quant_payload = quant_msg.get("structured_payload", {})
+        quant_signal = quant_payload.get("signal_strength", "")
+        if quant_signal == "WEAK" and direction not in ("PASS", None) and conviction and conviction > 0:
+            conviction = max(conviction - 1, 0)
+
         # Recalculate position size based on conviction AND risk's sizing recommendation
         entry = self._read_numeric(payload, "entry_price") or recommendation.get("entry_price") or 0
         if entry and conviction and direction not in ("PASS", None):
@@ -332,6 +367,15 @@ class Orchestrator:
         insert_role_message(user_message)
         await event_bus.publish("role_message", user_message)
         return user_message
+
+    @staticmethod
+    def _check_risk_veto(text: str) -> str | None:
+        """Detect if risk is vetoing the trade from natural language."""
+        upper = text.upper()
+        for phrase in ("VETO", "REJECT THIS", "DO NOT TRADE", "BLOCK THIS", "STAY OUT", "NO TRADE"):
+            if phrase in upper:
+                return text[:100]
+        return None
 
     @staticmethod
     def _extract_direction_from_text(text: str) -> str:

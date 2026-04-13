@@ -54,6 +54,7 @@ export const api = {
       body: JSON.stringify({ recommendation_id: recommendationId }),
     }),
   positions: (refreshPrices = false) => fetchJson<{ positions: Position[] }>(`/positions${refreshPrices ? "?refresh_prices=true" : ""}`),
+  checkExits: () => fetchJson<{ closed: { symbol: string; reason: string; pnl: number }[] }>("/check-exits", { method: "POST" }),
   settings: () => fetchJson<{ settings: Record<string, string>; groups: { id: string; label: string; keys: string[] }[] }>("/settings"),
   updateSettings: (updates: Record<string, string>) =>
     fetchJson<{ updated: Record<string, string> }>("/settings", { method: "PATCH", body: JSON.stringify(updates) }),

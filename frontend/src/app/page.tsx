@@ -46,10 +46,24 @@ export default function Page() {
 
   useEffect(() => { load().catch(console.error); }, [load]);
 
-  // Refresh position prices every 60 seconds
+  // Refresh prices + check exits every 60 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
-      api.positions(true).then((d) => setPositions(d.positions)).catch(console.error);
+    const interval = setInterval(async () => {
+      try {
+        // Check for auto-exits (stop/target/max hold)
+        const exits = await fetch(`${streamUrl.replace('/api/stream', '/api/check-exits')}`, { method: "POST" }).then(r => r.json()).catch(() => null);
+        if (exits?.closed?.length) {
+          for (const c of exits.closed) {
+            toast(`Auto-exit ${c.symbol}: ${c.reason} — P&L $${c.pnl.toFixed(2)}`, c.pnl >= 0 ? "success" : "error");
+          }
+        }
+        // Refresh positions with live prices
+        const d = await api.positions(true);
+        setPositions(d.positions);
+        // Refresh portfolio totals
+        const p = await api.portfolio();
+        setPortfolio(p);
+      } catch { /* ignore */ }
     }, 60000);
     return () => clearInterval(interval);
   }, []);

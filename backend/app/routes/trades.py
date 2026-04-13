@@ -6,6 +6,7 @@ from ..adapters.fmp import FMPClient
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_trade, insert_execution, list_executions, list_trades, update_trade
 from ..services.event_bus import event_bus
+from ..services.exit_manager import check_exits
 from ..services.portfolio import get_portfolio_summary, get_positions
 
 _fmp = FMPClient()
@@ -61,6 +62,13 @@ async def trade_detail(trade_id: str):
 @router.get("/executions")
 async def executions():
     return {"executions": list_executions()}
+
+
+@router.post("/check-exits")
+async def check_exits_endpoint():
+    """Check all open positions for stop/target/max-hold exits."""
+    closed = await check_exits()
+    return {"closed": closed, "checked": len(list_trades(open_only=True)) + len(closed)}
 
 
 @router.post("/trades/{trade_id}/sell")

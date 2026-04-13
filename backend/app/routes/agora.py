@@ -10,6 +10,8 @@ from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_recommendation, list_recommendations, upsert_recommendation
 from ..roles import Orchestrator
 from ..services.agora_bridge import trader_avatar_bridge
+from ..services.event_bus import event_bus
+from ..services.voice_commands import parse_voice_command
 
 
 router = APIRouter(prefix="/api", tags=["agora"])
@@ -73,8 +75,16 @@ async def agora_chat_completions(payload: dict):
     if not latest_user_message:
         raise HTTPException(status_code=400, detail="A user message is required")
     message_text = _content_to_text(latest_user_message.get("content"))
-    role_response = await orchestrator.route_group_chat(recommendation["id"], message_text)
-    content = role_response["message_text"]
+
+    # Check for voice commands first
+    cmd = await parse_voice_command(message_text, recommendation["id"])
+    if cmd.handled:
+        content = cmd.response
+        if cmd.sse_event:
+            await event_bus.publish("voice_command", cmd.sse_event)
+    else:
+        role_response = await orchestrator.route_group_chat(recommendation["id"], message_text)
+        content = role_response["message_text"]
     if payload.get("stream"):
         return StreamingResponse(_stream_chat_completion(content), media_type="text/event-stream")
     return {

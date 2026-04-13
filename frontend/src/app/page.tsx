@@ -9,6 +9,7 @@ import { GroupChat } from "@/components/roles/GroupChat";
 import { AvatarAndPositions } from "@/components/trades/AvatarAndPositions";
 import { ToastContainer, toast } from "@/components/shared/Toast";
 import { SettingsPanel } from "@/components/shared/SettingsPanel";
+import { HelpPanel } from "@/components/shared/HelpPanel";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
 import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
@@ -25,6 +26,7 @@ export default function Page() {
   const [avatarStatus, setAvatarStatus] = useState<TraderAvatarStatus | null>(null);
   const [scanning, setScanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const didInit = useRef(false);
 
   const load = useCallback(async () => {
@@ -62,6 +64,31 @@ export default function Page() {
       api.positions().then((d) => setPositions(d.positions)).catch(console.error);
     } else if (type === "market_event") {
       api.events().then((d) => setEvents(d.events)).catch(console.error);
+    } else if (type === "voice_command") {
+      const action = p.action as string;
+      if (action === "navigate" && p.recommendation_id) {
+        api.rec(p.recommendation_id as string).then((d) => {
+          setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline);
+        }).catch(console.error);
+        toast(`Voice: switching to ${p.symbol}`, "info");
+      } else if (action === "approve") {
+        toast(`Voice: approved ${p.symbol}`, "success");
+        void load();
+      } else if (action === "reject") {
+        toast(`Voice: rejected ${p.symbol}`, "info");
+        void load();
+      } else if (action === "execute") {
+        if (p.recommendation_id) {
+          api.execute(p.recommendation_id as string).then(() => { toast(`Voice: executed ${p.symbol}`, "success"); void load(); }).catch(console.error);
+        }
+      } else if (action === "sell") {
+        if (p.trade_id) {
+          const pos = positions.find((pp) => pp.id === p.trade_id);
+          api.sellTrade(p.trade_id as string, pos?.shares ?? 0).then((r) => { toast(`Voice: sold ${p.symbol}, P&L $${r.pnl.toFixed(2)}`, r.pnl >= 0 ? "success" : "error"); void load(); }).catch(console.error);
+        }
+      } else if (action === "switch_tab") {
+        toast(`Voice: ${p.tab} tab`, "info");
+      }
     } else if (type === "system") {
       if (p.type === "analysis_error") {
         toast(`Analysis failed for ${p.symbol}: ${p.error}`, "error");
@@ -146,7 +173,7 @@ export default function Page() {
 
   return (
     <main className="workstation">
-      <Header portfolioValue={portfolioValue} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} />
+      <Header portfolioValue={portfolioValue} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
       {!hasContent ? (
         <EmptyState onScan={onScan} scanning={scanning} />
       ) : (
@@ -194,6 +221,7 @@ export default function Page() {
         </div>
       )}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
       <ToastContainer />
     </main>
   );

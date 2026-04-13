@@ -17,6 +17,15 @@ EARNINGS_LOG = ROOT_DIR / "phase1" / "earnings_log.csv"
 _TERMINAL_STATUSES = {"closed", "rejected", "cancelled", "failed"}
 
 
+def _get_portfolio_size() -> float:
+    """Get current portfolio value for sizing. Falls back to $100k."""
+    try:
+        from ..services.portfolio import get_portfolio_summary
+        return float(get_portfolio_summary().get("portfolio_value", 100000))
+    except Exception:
+        return 100000.0
+
+
 def _find_existing_rec(symbol: str) -> dict | None:
     for rec in list_recommendations(limit=50):
         if rec["symbol"] == symbol and rec["status"] not in _TERMINAL_STATUSES:
@@ -96,6 +105,10 @@ async def run_scan() -> dict:
             filters = apply_pead_filters(quote, spy)
             open_price = float(quote.get("open") or price)
 
+            # V2: enforce PEAD filters — skip if regime/gap fail
+            if not filters["filters_passed"]:
+                continue
+
             candidates.append({
                 "symbol": symbol,
                 "eps_surprise": eps_surprise,
@@ -105,7 +118,7 @@ async def run_scan() -> dict:
                 "event": event,
                 "quote": quote,
                 "filters": filters,
-                "score": eps_surprise + rev_surprise,  # simple ranking score
+                "score": eps_surprise + rev_surprise,
             })
 
         # V2: take top N candidates by score
@@ -114,7 +127,7 @@ async def run_scan() -> dict:
 
         results = []
         for cand in top:
-            sizing = calculate_position(cand["price"], 100000.0)
+            sizing = calculate_position(cand["price"], _get_portfolio_size())
             event_record = {
                 "id": new_id("evt"),
                 "type": "earnings",
@@ -241,7 +254,7 @@ async def _scan_from_logs_or_mock(min_eps: float, min_rev: float, require_rev: b
         if existing:
             recommendation = existing
         else:
-            sizing = calculate_position(100.0 + cand["eps_surprise"], 100000.0)
+            sizing = calculate_position(100.0 + cand["eps_surprise"], _get_portfolio_size())
             recommendation = {
                 "id": new_id("rec"),
                 "symbol": cand["symbol"],

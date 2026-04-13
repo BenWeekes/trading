@@ -134,24 +134,34 @@ class Orchestrator:
             direction = "PASS"
             conviction = 0
             veto_reason = risk_payload.get("reject_reason") or risk_veto_text or "Risk veto"
-            await event_bus.publish("role_message", {
-                "id": new_id("msg"), "role": "system", "sender": "system",
+            veto_msg = {
+                "id": new_id("msg"), "role_thread_id": risk_msg.get("role_thread_id", ""),
+                "role": "risk", "sender": "system",
                 "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
                 "message_text": f"Risk VETO: {veto_reason}. Trade blocked.",
-                "structured_payload": {"type": "risk_veto"}, "timestamp": utcnow_iso(),
-            })
+                "structured_payload": {"type": "risk_veto"}, "stance": None, "confidence": None,
+                "provider": None, "model_used": None, "input_tokens": 0, "output_tokens": 0,
+                "cost_usd": 0.0, "timestamp": utcnow_iso(),
+            }
+            insert_role_message(veto_msg)
+            await event_bus.publish("role_message", veto_msg)
 
         # Research quality downgrade reduces conviction by 2 points
         research_payload = research_msg.get("structured_payload", {})
         beat_quality = research_payload.get("beat_quality", "")
         if beat_quality in ("ONE_OFF", "ACCOUNTING") and conviction and conviction > 0:
             conviction = max(conviction - 2, 0)
-            await event_bus.publish("role_message", {
-                "id": new_id("msg"), "role": "system", "sender": "system",
+            downgrade_msg = {
+                "id": new_id("msg"), "role_thread_id": research_msg.get("role_thread_id", ""),
+                "role": "research", "sender": "system",
                 "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
                 "message_text": f"Research flagged beat quality as {beat_quality}. Conviction reduced to {conviction}/10.",
-                "structured_payload": {"type": "research_downgrade"}, "timestamp": utcnow_iso(),
-            })
+                "structured_payload": {"type": "research_downgrade"}, "stance": None, "confidence": None,
+                "provider": None, "model_used": None, "input_tokens": 0, "output_tokens": 0,
+                "cost_usd": 0.0, "timestamp": utcnow_iso(),
+            }
+            insert_role_message(downgrade_msg)
+            await event_bus.publish("role_message", downgrade_msg)
 
         # Quant must have coherent plan — if no entry/stop/target, downgrade
         quant_payload = quant_msg.get("structured_payload", {})
@@ -162,7 +172,9 @@ class Orchestrator:
         # Recalculate position size based on conviction AND risk's sizing recommendation
         entry = self._read_numeric(payload, "entry_price") or recommendation.get("entry_price") or 0
         if entry and conviction and direction not in ("PASS", None):
-            sized = calculate_position(float(entry), 100000.0, conviction)
+            from ..services.portfolio import get_portfolio_summary
+            portfolio_value = float(get_portfolio_summary().get("portfolio_value", 100000))
+            sized = calculate_position(float(entry), portfolio_value, conviction)
             pos_shares = sized["position_size_shares"]
             pos_dollars = sized["position_size_dollars"]
             size_note = sized.get("size_note", "")

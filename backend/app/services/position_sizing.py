@@ -25,10 +25,18 @@ def conviction_multiplier(conviction: int | None) -> float:
 
 
 def calculate_position(entry_price: float, portfolio_size: float, conviction: int | None = None) -> dict:
+    from ..db.repositories import get_all_strategy_settings
+    strat = get_all_strategy_settings()
     settings = get_settings()
-    stop_price = round(entry_price * (1 - settings.stop_loss_pct), 2)
+
+    # Use strategy settings if available, fall back to config
+    risk_pct = float(strat.get("risk_per_trade_pct", str(settings.risk_per_trade * 100))) / 100
+    stop_pct = float(strat.get("stop_fixed_pct", str(settings.stop_loss_pct * 100))) / 100
+    reward_ratio = settings.reward_risk_ratio
+
+    stop_price = round(entry_price * (1 - stop_pct), 2)
     risk_per_share = max(entry_price - stop_price, 0.01)
-    max_risk = portfolio_size * settings.risk_per_trade
+    max_risk = portfolio_size * risk_pct
     base_shares = math.floor((max_risk / risk_per_share) * 100) / 100
 
     # Apply conviction scaling
@@ -36,7 +44,7 @@ def calculate_position(entry_price: float, portfolio_size: float, conviction: in
     shares = math.floor(base_shares * multiplier * 100) / 100
 
     target_price = round(
-        entry_price + (settings.reward_risk_ratio * (entry_price - stop_price)),
+        entry_price + (reward_ratio * (entry_price - stop_price)),
         2,
     )
 
@@ -48,9 +56,9 @@ def calculate_position(entry_price: float, portfolio_size: float, conviction: in
         "entry_price": round(entry_price, 2),
         "entry_logic": "Current market/open price used as entry reference.",
         "stop_price": stop_price,
-        "stop_logic": f"{settings.stop_loss_pct:.0%} stop from entry based on portfolio risk rules.",
+        "stop_logic": f"{stop_pct:.0%} stop from entry based on portfolio risk rules.",
         "target_price": target_price,
-        "target_logic": f"{settings.reward_risk_ratio:.1f}:1 reward-to-risk target.",
+        "target_logic": f"{reward_ratio:.1f}:1 reward-to-risk target.",
         "position_size_shares": shares,
         "position_size_dollars": round(shares * entry_price, 2),
         "conviction_multiplier": multiplier,

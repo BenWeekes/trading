@@ -23,11 +23,22 @@ from ..services.event_bus import event_bus
 _fmp = FMPClient()
 
 
+def _trading_days_between(start: datetime, end: datetime) -> int:
+    """Count weekdays (Mon-Fri) between two dates. Approximate trading days."""
+    days = 0
+    current = start
+    while current < end:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Mon=0 .. Fri=4
+            days += 1
+    return days
+
+
 async def check_exits() -> list[dict]:
     """Check all open positions for exit conditions. Returns list of closed trades."""
     strat = get_all_strategy_settings()
+    target_hold = int(strat.get("target_hold_days", "10"))
     max_hold = int(strat.get("max_hold_days", "30"))
-    stop_pct = float(strat.get("stop_fixed_pct", "5.0")) / 100
 
     open_trades = list_trades(open_only=True)
     closed = []
@@ -80,11 +91,16 @@ async def check_exits() -> list[dict]:
                 if target and price >= target:
                     exit_reason = "target"
 
-        # Max hold period
+        # Hold period — check target hold (trading days) and max hold (calendar days)
         if not exit_reason and trade.get("opened_at"):
             try:
                 opened = datetime.fromisoformat(trade["opened_at"].replace("Z", "+00:00"))
-                if datetime.now(opened.tzinfo) - opened > timedelta(days=max_hold):
+                now_dt = datetime.now(opened.tzinfo)
+                trading_days = _trading_days_between(opened, now_dt)
+                calendar_days = (now_dt - opened).days
+                if trading_days >= target_hold:
+                    exit_reason = "target_hold"
+                elif calendar_days >= max_hold:
                     exit_reason = "max_hold"
             except Exception:
                 pass

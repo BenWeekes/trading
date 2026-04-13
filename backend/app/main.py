@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -42,11 +43,28 @@ def seed_role_configs() -> None:
         )
 
 
+async def _exit_check_loop():
+    """Background loop: check exits every 60 seconds, independent of browser."""
+    from .services.exit_manager import check_exits
+    await asyncio.sleep(10)  # wait for startup
+    while True:
+        try:
+            closed = await check_exits()
+            if closed:
+                for c in closed:
+                    print(f"[exit-manager] auto-exit {c['symbol']}: {c['reason']} pnl={c['pnl']}")
+        except Exception as exc:
+            print(f"[exit-manager] error: {exc}")
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     seed_role_configs()
+    task = asyncio.create_task(_exit_check_loop())
     yield
+    task.cancel()
 
 
 settings = get_settings()

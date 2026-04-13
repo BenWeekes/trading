@@ -5,68 +5,71 @@
 ## System shape
 
 ```text
-Next.js workstation
-  -> FastAPI backend
-      -> SQLite/local data layer
-      -> role orchestration
-      -> provider adapters
-      -> paper execution flow
-      -> SSE updates
-      -> optional Agora trader bridge
+Next.js workstation (port 3000)
+  -> FastAPI backend (port 8000)
+      -> SQLite (data/aatf.db)
+      -> LLM providers (OpenAI GPT-5.1 / mock)
+      -> Alpaca (paper trading)
+      -> FMP (earnings, quotes, news)
+      -> optional Agora trader avatar (port 8082)
 ```
 
 ## Main product rule
 
-The backend is the system of record.
-
-Agora is optional and only used for the `trader` avatar/voice layer. Supporting roles remain text-first.
+The backend is the system of record. The frontend is a view layer.
 
 ## Core components
 
 Frontend:
-- event feed
-- desk chat
-- shared summary
-- recommendation card
-- open positions
-- trader avatar panel
+- inbox tabs (events / recommendations)
+- trade panel (summary + buy controls + prices)
+- desk chat (group chat with @role routing and filters)
+- avatar panel (Agora RTC video/audio)
+- portfolio (positions with sell/cover controls)
+- settings panel (strategy configuration modal)
+- toast notifications
 
 Backend:
-- routes
-- orchestration
-- role classes
-- provider adapters
-- state machine
-- repositories/database
-- event bus
+- routes (events, recommendations, trades, settings, avatar)
+- role orchestration (parallel analysis, trader synthesis, inter-role queries)
+- role classes (research, risk, quant_pricing, trader) with own sessions
+- LLM provider abstraction (OpenAI Responses API / Chat API / mock)
+- state machine (12 recommendation states)
+- position sizing (conviction-based scaling)
+- Alpaca adapter (bracket orders, position close)
+- event bus (SSE broadcasting)
+- strategy settings (persisted defaults from operator spec)
 
 ## Main flow
 
-1. Event enters system.
-2. Recommendation context exists or is selected.
-3. `research`, `risk`, and `quant_pricing` analyse in parallel.
-4. `trader` queries roles when needed.
+1. Scan finds earnings events, creates recommendations.
+2. Analysis runs in background — 3 roles analyse in parallel.
+3. Trader queries roles, extracts direction + conviction from response.
+4. Position size calculated based on conviction (7=75%, 8-9=100%, 10=125%).
 5. Recommendation moves to `awaiting_user_feedback`.
-6. Human or trader marks it ready.
+6. Human discusses with roles, clicks Ready for Approval.
 7. Recommendation moves to `awaiting_user_approval`.
-8. Human approves or rejects.
-9. Only approved recommendations can be executed.
+8. Human approves with editable share count, or rejects.
+9. Execute submits to Alpaca (or paper fallback).
+10. SELL/COVER finds and closes existing positions.
 
 ## Important architectural decisions
 
-- Group chat is shared, but `@role` routing is directed 1-to-1.
-- User messages are stored in the same timeline as role messages.
-- Approval and execution are separate routes and separate auditable events.
-- Recommendation objects carry both numeric levels and reasoning fields.
-- Voice turns should converge on the same recommendation/timeline state as typed turns.
+- Group chat is shared, `@role` routing is directed 1-to-1
+- Approval and execution are separate auditable steps
+- PASS recommendations filtered from UI, shown as badge on events
+- Background analysis via asyncio.create_task — scan returns immediately
+- LLM responses parsed for JSON even when truncated (regex fallback)
+- Conviction below threshold produces zero shares (won't trade)
+- Settings panel backed by operator spec defaults
 
-## Agora integration boundary
+## Agora integration
 
-The main backend exposes:
-- avatar start/stop/speak routes
-- an Agora-compatible `/chat/completions` proxy endpoint
-
-The current UI embeds the trader avatar via the configured Agora client URL.
+- Backend starts agent via two-phase flow (tokens then connect)
+- Frontend joins RTC channel directly with agora-rtc-sdk-ng
+- Avatar video plays into container div via track.play()
+- Mute/unmute toggles local audio track
+- Chat/completions proxy routes through orchestrator
 
 ## Related Deep Dives
 

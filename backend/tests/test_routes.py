@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import Optional
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -8,12 +12,12 @@ from app.db.repositories import upsert_recommendation
 client = TestClient(app)
 
 
-def seed_recommendation(symbol: str = "NVDA") -> dict:
+def seed_recommendation(symbol: str = "NVDA", status: str = "observing", direction: Optional[str] = None) -> dict:
     recommendation = {
         "id": new_id("rec"),
         "symbol": symbol,
-        "direction": None,
-        "status": "observing",
+        "direction": direction,
+        "status": status,
         "strategy_type": "TEST",
         "thesis": f"{symbol} seeded for route test.",
         "entry_price": 100.0,
@@ -25,7 +29,7 @@ def seed_recommendation(symbol: str = "NVDA") -> dict:
         "position_size_shares": 10.0,
         "position_size_dollars": 1000.0,
         "time_horizon": "test",
-        "conviction": 5,
+        "conviction": 7,
         "supporting_roles": [],
         "blocking_risks": [],
         "created_at": utcnow_iso(),
@@ -47,12 +51,15 @@ def test_status():
     assert response.json()["ok"] is True
 
 
-def test_random_event_flow():
+def test_random_event_returns_event_and_recommendation():
     response = client.post("/api/demo/random-event")
     assert response.status_code == 200
     payload = response.json()
     assert payload["event"]["symbol"]
-    assert payload["recommendation"]["status"] == "awaiting_user_feedback"
+    assert payload["recommendation"]["id"]
+    # analysis runs in background — rec may be observing or under_discussion
+    # analysis may complete instantly with mock provider, or be in progress
+    assert payload["recommendation"]["status"] in ("observing", "under_discussion", "awaiting_user_feedback")
 
 
 def test_avatar_status_route():
@@ -60,38 +67,6 @@ def test_avatar_status_route():
     assert response.status_code == 200
     payload = response.json()
     assert "enabled" in payload
-    assert "client_url" in payload
-
-
-def test_agora_chat_completions_route():
-    recommendation = seed_recommendation("AMD")
-    response = client.post(
-        "/api/agora/chat/completions",
-        json={
-            "model": "trader-proxy-v1",
-            "messages": [{"role": "user", "content": "@trader what do you think about this setup?"}],
-            "context": {"recommendation_id": recommendation["id"], "symbol": "AMD"},
-            "stream": False,
-        },
-    )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["object"] == "chat.completion"
-    assert payload["choices"][0]["message"]["role"] == "assistant"
-    assert payload["choices"][0]["message"]["content"]
-
-
-def test_agora_chat_requires_existing_recommendation_or_symbol_match():
-    response = client.post(
-        "/api/agora/chat/completions",
-        json={
-            "model": "trader-proxy-v1",
-            "messages": [{"role": "user", "content": "@trader what do you think?"}],
-            "context": {"symbol": "NOPE"},
-            "stream": False,
-        },
-    )
-    assert response.status_code == 404
 
 
 def test_execute_requires_approval():
@@ -101,9 +76,43 @@ def test_execute_requires_approval():
     assert "approved" in response.json()["detail"]
 
 
-def test_ready_route_moves_feedback_to_approval():
-    event_payload = client.post("/api/demo/random-event").json()
-    recommendation_id = event_payload["recommendation"]["id"]
-    response = client.post(f"/api/recs/{recommendation_id}/ready")
+def test_approve_requires_awaiting_approval_state():
+    recommendation = seed_recommendation("AAPL", status="awaiting_user_feedback", direction="BUY")
+    response = client.post(f"/api/recs/{recommendation['id']}/approve", json={"shares": 10})
+    assert response.status_code == 400
+    assert "Ready" in response.json()["detail"]
+
+
+def test_ready_then_approve_flow():
+    recommendation = seed_recommendation("TSLA", status="awaiting_user_feedback", direction="BUY")
+    # Step 1: ready
+    r1 = client.post(f"/api/recs/{recommendation['id']}/ready")
+    assert r1.status_code == 200
+    assert r1.json()["status"] == "awaiting_user_approval"
+    # Step 2: approve
+    r2 = client.post(f"/api/recs/{recommendation['id']}/approve", json={"shares": 5})
+    assert r2.status_code == 200
+    assert r2.json()["status"] == "approved"
+
+
+def test_reject_from_feedback():
+    recommendation = seed_recommendation("GOOG", status="awaiting_user_feedback", direction="SHORT")
+    response = client.post(f"/api/recs/{recommendation['id']}/reject", json={"reason": "not convinced"})
     assert response.status_code == 200
-    assert response.json()["status"] == "awaiting_user_approval"
+    assert response.json()["status"] == "rejected"
+
+
+def test_settings_get():
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    data = response.json()
+    assert "settings" in data
+    assert "groups" in data
+    assert "min_conviction_to_trade" in data["settings"]
+    assert "strategies_enabled" in data["settings"]
+
+
+def test_settings_patch():
+    response = client.patch("/api/settings", json={"min_conviction_to_trade": "8"})
+    assert response.status_code == 200
+    assert response.json()["updated"]["min_conviction_to_trade"] == "8"

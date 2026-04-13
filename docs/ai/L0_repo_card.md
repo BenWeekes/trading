@@ -3,10 +3,10 @@
 repo_name: `trading`
 repo_type: `full-stack app`
 primary_languages: `Python`, `TypeScript`
-frameworks: `FastAPI`, `Next.js`, `React`, `SQLite`
-runtime_modes: `local dev`, `paper trading`, `demo/replay`, `optional Agora trader avatar`
-system_of_record: `backend FastAPI app + SQLite/Postgres-compatible relational model`
-last_reviewed: `2026-04-12`
+frameworks: `FastAPI`, `Next.js`, `React`, `SQLite`, `Agora RTC`
+runtime_modes: `local dev`, `paper trading`, `demo/mock`, `optional Agora trader avatar`
+system_of_record: `backend FastAPI app + SQLite`
+last_reviewed: `2026-04-13`
 
 | L1 File | Purpose |
 | --- | --- |
@@ -28,5 +28,5 @@ last_reviewed: `2026-04-12`
 
 | Spec Document | Purpose |
 | --- | --- |
-| [trading_plan_claude.md](/trading_plan_claude.md) | Full build specification — strategies, schemas, API spec, DB, costs, migration |
-| [trading_plan_codex.md](/trading_plan_codex.md) | Product direction, MVP scope, UX design, build sequence |
+| [trading_plan_claude.md](/trading_plan_claude.md) | Full build specification — strategies, schemas, API spec, DB, costs |
+| [trading_plan_codex.md](/trading_plan_codex.md) | Product direction, MVP scope, UX design |

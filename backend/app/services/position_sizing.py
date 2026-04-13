@@ -9,26 +9,19 @@ def conviction_multiplier(conviction: int | None) -> float:
     """Scale position size by conviction. Higher conviction = bigger trade.
 
     10/10 → 1.25x (max confidence bonus)
-     9/10 → 1.0x  (full standard size)
-     8/10 → 1.0x  (full standard size)
+     8-9  → 1.0x  (full standard size)
      7/10 → 0.75x (decent but not strong)
-     6/10 → 0.5x  (marginal)
-     5/10 → 0.25x (minimum viable)
-    <5    → 0.0   (don't trade — too low conviction)
+    <7    → 0.0   (don't trade — conviction too low)
     """
     if conviction is None:
-        return 0.5  # unknown conviction = half size
+        return 0.75  # unknown conviction = reduced size
     if conviction >= 10:
         return 1.25
     if conviction >= 8:
         return 1.0
     if conviction >= 7:
         return 0.75
-    if conviction >= 6:
-        return 0.5
-    if conviction >= 5:
-        return 0.25
-    return 0.0  # below 5 = don't trade
+    return 0.0  # below 7 = don't trade
 
 
 def calculate_position(entry_price: float, portfolio_size: float, conviction: int | None = None) -> dict:

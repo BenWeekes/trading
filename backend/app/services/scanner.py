@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
-import csv
-
-from ..config import ROOT_DIR, get_settings
+from ..config import get_settings
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_all_strategy_settings, insert_event, list_recommendations, upsert_recommendation
 from ..services.filters import apply_pead_filters
 from ..services.position_sizing import calculate_position
 from ..adapters.fmp import FMPClient
 
-
-TRADE_LOG = ROOT_DIR / "phase1" / "trade_log.csv"
-EARNINGS_LOG = ROOT_DIR / "phase1" / "earnings_log.csv"
 
 _TERMINAL_STATUSES = {"closed", "rejected", "cancelled", "failed"}
 
@@ -31,13 +25,6 @@ def _find_existing_rec(symbol: str) -> dict | None:
         if rec["symbol"] == symbol and rec["status"] not in _TERMINAL_STATUSES:
             return rec
     return None
-
-
-def _read_csv(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open("r", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
 
 
 def _get_setting(settings_dict: dict, key: str, default: str) -> str:
@@ -177,9 +164,7 @@ async def run_scan() -> dict:
 
 
 async def _scan_from_logs_or_mock(min_eps: float, min_rev: float, require_rev: bool, max_cands: int, hold: str) -> dict:
-    earnings = _read_csv(EARNINGS_LOG)
-
-    # Dedupe + supplement with mock data
+    # Mock earnings data for development/testing
     mock_earnings = [
         {"symbol": "NVDA", "date": "2026-04-13", "actual_eps": "1.25", "estimated_eps": "1.12", "surprise_pct": "11.6",
          "revenue": "35200000000", "revenue_estimated": "33100000000"},
@@ -197,21 +182,9 @@ async def _scan_from_logs_or_mock(min_eps: float, min_rev: float, require_rev: b
          "revenue": "124500000000", "revenue_estimated": "120800000000"},
     ]
 
-    seen: set[str] = set()
-    deduped: list[dict] = []
-    for row in earnings:
-        sym = row.get("symbol")
-        if sym and sym not in seen:
-            seen.add(sym)
-            deduped.append(row)
-    for mock in mock_earnings:
-        if mock["symbol"] not in seen:
-            seen.add(mock["symbol"])
-            deduped.append(mock)
-
     # Score and filter
     candidates = []
-    for row in deduped:
+    for row in mock_earnings:
         symbol = row.get("symbol")
         eps_surprise = float(row.get("surprise_pct") or 0)
         if eps_surprise < min_eps:

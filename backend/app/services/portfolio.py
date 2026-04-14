@@ -1,37 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
-import csv
-
-from ..config import ROOT_DIR, get_settings
+from ..config import get_settings
 from ..db.repositories import list_trades
 
-TRADE_LOG = ROOT_DIR / "phase1" / "trade_log.csv"
 STARTING_EQUITY = 100000.0
-
-
-def _read_csv(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open("r", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
 
 
 def get_portfolio_summary() -> dict:
     settings = get_settings()
 
-    # Calculate from DB trades
     all_trades = list_trades()
     closed_trades = [t for t in all_trades if t.get("closed_at")]
     open_trades = [t for t in all_trades if not t.get("closed_at")]
 
-    # Realised P&L from closed trades
     realised_pnl = sum(float(t.get("pnl_dollars") or 0) for t in closed_trades)
-
-    # Unrealised P&L from open positions
     unrealised_pnl = sum(float(t.get("unrealized_pnl") or 0) for t in open_trades)
-
-    # Cash used by open positions
     cash_in_positions = sum(
         float(t.get("entry_price") or 0) * float(t.get("shares") or 0)
         for t in open_trades
@@ -39,11 +22,10 @@ def get_portfolio_summary() -> dict:
 
     cash = STARTING_EQUITY + realised_pnl - cash_in_positions
     equity = cash + cash_in_positions + unrealised_pnl
-    portfolio_value = equity
 
     return {
         "cash": round(cash, 2),
-        "portfolio_value": round(portfolio_value, 2),
+        "portfolio_value": round(equity, 2),
         "buying_power": round(cash * 2, 2),
         "equity": round(equity, 2),
         "last_equity": STARTING_EQUITY,

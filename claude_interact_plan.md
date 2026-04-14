@@ -108,9 +108,156 @@ Also publishes SSE events → UI updates
       "symbol": { "type": "string" },
       "shares": { "type": "number" }
     }
+  },
+  {
+    "name": "confirm_action",
+    "description": "User confirms a pending action. Use when user says 'confirm', 'yes', 'go ahead', 'do it' after a confirmation prompt.",
+    "parameters": {}
+  },
+  {
+    "name": "cancel_action",
+    "description": "User cancels a pending action. Use when user says 'cancel', 'no', 'wait', 'stop' after a confirmation prompt.",
+    "parameters": {}
+  },
+
+  // ── UI Navigation & Control ──
+
+  {
+    "name": "show_events_tab",
+    "description": "Switch the left panel to the Events tab. Use when user says 'show events', 'show news', 'what happened today'.",
+    "parameters": {}
+  },
+  {
+    "name": "show_recommendations_tab",
+    "description": "Switch the left panel to the Recommendations tab. Use when user says 'show recommendations', 'show recs', 'what trades are pending'.",
+    "parameters": {}
+  },
+  {
+    "name": "open_settings",
+    "description": "Open the strategy settings panel. Use when user says 'open settings', 'show settings', 'change settings', 'configure'.",
+    "parameters": {}
+  },
+  {
+    "name": "close_settings",
+    "description": "Close the strategy settings panel. Use when user says 'close settings', 'done with settings'.",
+    "parameters": {}
+  },
+  {
+    "name": "open_help",
+    "description": "Open the help panel. Use when user says 'help', 'show help', 'how does this work', 'what can you do'.",
+    "parameters": {}
+  },
+  {
+    "name": "close_help",
+    "description": "Close the help panel. Use when user says 'close help', 'got it', 'done'.",
+    "parameters": {}
+  },
+  {
+    "name": "update_setting",
+    "description": "Change a strategy setting. Use when user says 'change conviction threshold to 8', 'set risk per trade to 2 percent', 'increase max positions to 20'.",
+    "parameters": {
+      "key": { "type": "string", "description": "Setting key e.g. min_conviction_to_trade, risk_per_trade_pct, max_positions, min_surprise_pct" },
+      "value": { "type": "string", "description": "New value as string." }
+    }
+  },
+  {
+    "name": "ask_role",
+    "description": "Ask a specific role a question in the desk chat. Use when user says 'ask research about...', 'what does risk think about...', 'get quant's view on...'.",
+    "parameters": {
+      "role": { "type": "string", "enum": ["research", "risk", "quant_pricing", "trader"], "description": "Which role to ask." },
+      "question": { "type": "string", "description": "The question to send." }
+    }
+  },
+  {
+    "name": "filter_chat_by_role",
+    "description": "Filter the desk chat to show only one role's messages. Use when user says 'show me only risk messages', 'filter to research', 'show all messages'.",
+    "parameters": {
+      "role": { "type": "string", "description": "Role name to filter by, or 'all' to show everything." }
+    }
+  },
+  {
+    "name": "start_voice_call",
+    "description": "Start the trader avatar voice call. Use when user says 'start call', 'connect avatar'. Usually already active if user is speaking.",
+    "parameters": {}
+  },
+  {
+    "name": "end_voice_call",
+    "description": "End the trader avatar voice call. Use when user says 'end call', 'disconnect', 'hang up', 'goodbye'.",
+    "parameters": {}
+  },
+  {
+    "name": "mute_microphone",
+    "description": "Mute or unmute the user's microphone. Use when user says 'mute', 'unmute', 'toggle mute'.",
+    "parameters": {
+      "muted": { "type": "boolean", "description": "True to mute, false to unmute." }
+    }
   }
 ]
 ```
+
+### Full UI Control Summary
+
+Every UI action is a function call. The user never needs to touch the mouse:
+
+| Voice Command | Tool Called | UI Effect |
+|---------------|-----------|-----------|
+| "Show me NVDA" | `navigate_to_symbol(NVDA)` | Switches active stock, loads context |
+| "Show events" | `show_events_tab()` | Left panel → Events tab |
+| "Show recommendations" | `show_recommendations_tab()` | Left panel → Recs tab |
+| "Open settings" | `open_settings()` | Settings modal opens |
+| "Close settings" | `close_settings()` | Settings modal closes |
+| "Set conviction threshold to 8" | `update_setting(min_conviction_to_trade, 8)` | Changes setting |
+| "Open help" | `open_help()` | Help modal opens |
+| "Close help" | `close_help()` | Help modal closes |
+| "Buy 50 shares of NVDA" | `approve_and_execute(NVDA, 50)` | Confirmation prompt, then trade |
+| "Confirm" | `confirm_action()` | Executes pending trade |
+| "Cancel" | `cancel_action()` | Cancels pending action |
+| "Sell all PLTR" | `sell_position(PLTR, all)` | Confirmation prompt, then close |
+| "What did research say?" | `get_recommendation_detail(NVDA)` | Speaks role analysis |
+| "How's the portfolio?" | `get_portfolio_status()` | Speaks cash, P&L, positions |
+| "Ask risk about sector exposure" | `ask_role(risk, sector exposure?)` | Posts to desk chat, speaks response |
+| "Filter chat to research only" | `filter_chat_by_role(research)` | Chat filter applied |
+| "Show all messages" | `filter_chat_by_role(all)` | Chat filter cleared |
+| "Scan for opportunities" | `scan_earnings()` | Runs scan, speaks results |
+| "Reduce to 30 shares" | `change_position_size(NVDA, 30)` | Updates share count in trade panel |
+| "Reject this" | `reject_recommendation(NVDA, not convinced)` | Rejects rec |
+| "End call" | `end_voice_call()` | Disconnects avatar |
+| "Mute" | `mute_microphone(true)` | Mutes mic |
+
+### Frontend SSE Handler for UI Commands
+
+All UI control tools publish a `voice_command` SSE event with the action. The frontend handles each:
+
+```typescript
+// In the SSE handler
+if (type === "voice_command") {
+  switch (p.action) {
+    case "navigate":       setActiveRec(findRec(p.symbol)); break;
+    case "switch_tab":     setActiveTab(p.tab); break;
+    case "open_settings":  setSettingsOpen(true); break;
+    case "close_settings": setSettingsOpen(false); break;
+    case "open_help":      setHelpOpen(true); break;
+    case "close_help":     setHelpOpen(false); break;
+    case "filter_chat":    setChatFilter(p.role); break;
+    case "mute":           agoraToggleMute(); break;
+    case "end_call":       agoraLeave(); break;
+    // ... trade actions handled as before
+  }
+}
+```
+
+### Implementation Complexity
+
+This is straightforward because:
+1. **All the backend actions already exist** — approve, execute, sell, scan, settings CRUD, portfolio query are all working API endpoints
+2. **All the UI state is already in React** — settingsOpen, helpOpen, activeTab, chatFilter are all existing state variables
+3. **SSE handler already exists** — just add more cases
+4. The only new code is:
+   - Tool definitions (JSON schema, ~200 lines)
+   - Tool executor (switch/case mapping tool names to existing functions, ~150 lines)
+   - SSE cases for UI commands (~30 lines)
+   - Context builder for Agent Update API (~100 lines)
+   - Confirmation state management (~50 lines)
 
 ### Context Injection
 

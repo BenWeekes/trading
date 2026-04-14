@@ -54,9 +54,11 @@ All actions use `recommendation_id` or `trade_id` (from context), never symbol a
 
 **State machine enforcement:** `approve_and_execute` calls `/ready` → `/approve` → `/execute` in sequence. If the rec is in `observing` or `under_discussion`, the backend rejects. The tool returns the error and the LLM tells the user "That recommendation isn't ready for approval yet."
 
+**Active context validation:** Every action tool must check that its `recommendation_id` matches the current `active_recommendation_id` from context. If stale (user navigated away), reject with "Context has changed — you're now looking at {new_symbol}." This is enforced in the tool executor, not by the LLM.
+
 ### Confirmation Flow
 
-**Pending action model:** In-memory dict keyed by `agent_session_id`:
+**Pending action model:** In-memory dict keyed by `agent_session_id` (dev-only — production must use Redis or DB-backed session state for multi-process/restart safety):
 ```python
 pending_voice_actions = {
     "session_abc": {
@@ -85,7 +87,7 @@ All recommendation-scoped tools use `recommendation_id`, not symbol. `navigate_t
 | `get_portfolio_status` | "status", "how are we doing", "cash?" | — |
 | `get_recommendation_detail` | "what did research say", "what's the risk view" | `recommendation_id` |
 | `scan_earnings` | "scan", "find opportunities" | — |
-| `ask_role` | "ask research about...", "what does risk think" | `role`, `question` |
+| `ask_role` | "ask research about...", "what does risk think" | `role`, `recommendation_id`, `question` |
 
 ### UI Control
 

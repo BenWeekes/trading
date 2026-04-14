@@ -59,7 +59,7 @@ def test_random_event_returns_event_and_recommendation():
     assert payload["recommendation"]["id"]
     # analysis runs in background — rec may be observing or under_discussion
     # analysis may complete instantly with mock provider, or be in progress
-    assert payload["recommendation"]["status"] in ("observing", "under_discussion", "awaiting_user_feedback")
+    assert payload["recommendation"]["status"] in ("observing", "under_discussion", "awaiting_user_feedback", "awaiting_user_approval")
 
 
 def test_avatar_status_route():

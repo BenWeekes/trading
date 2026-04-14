@@ -7,6 +7,8 @@ type Props = {
   messages: RoleMessage[];
   onSend: (message: string) => void;
   activeSymbol?: string | null;
+  roleFilter?: string | null;
+  onRoleFilterChange?: (role: string | null) => void;
 };
 
 const ROLES = [
@@ -24,11 +26,13 @@ function senderInfo(sender: string, role: string) {
   return ROLE_MAP[key] ?? ROLE_MAP[role] ?? { icon: "\u{1F916}", label: role, color: "var(--text-soft)" };
 }
 
-export function GroupChat({ messages, onSend, activeSymbol }: Props) {
+export function GroupChat({ messages, onSend, activeSymbol, roleFilter: externalFilter, onRoleFilterChange }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
-  const [roleFilter, setRoleFilter] = useState<string | null>(null);
+  const [internalFilter, setInternalFilter] = useState<string | null>(null);
+  const roleFilter = externalFilter !== undefined ? externalFilter : internalFilter;
+  const setRoleFilter = (f: string | null) => { setInternalFilter(f); onRoleFilterChange?.(f); };
   const [showMentions, setShowMentions] = useState(false);
   const [mentionFilter, setMentionFilter] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);

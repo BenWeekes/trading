@@ -27,6 +27,8 @@ export default function Page() {
   const [scanning, setScanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"events" | "recs">("events");
+  const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const didInit = useRef(false);
 
   const load = useCallback(async () => {
@@ -92,24 +94,37 @@ export default function Page() {
         api.rec(p.recommendation_id as string).then((d) => {
           setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline);
         }).catch(console.error);
-        toast(`Voice: switching to ${p.symbol}`, "info");
-      } else if (action === "approve") {
-        toast(`Voice: approved ${p.symbol}`, "success");
+        toast(`Switching to ${p.symbol}`, "info");
+      } else if (action === "approve" || action === "execute") {
+        toast(`Executed ${p.symbol}`, "success");
         void load();
       } else if (action === "reject") {
-        toast(`Voice: rejected ${p.symbol}`, "info");
+        toast(`Rejected ${p.symbol}`, "info");
         void load();
-      } else if (action === "execute") {
-        if (p.recommendation_id) {
-          api.execute(p.recommendation_id as string).then(() => { toast(`Voice: executed ${p.symbol}`, "success"); void load(); }).catch(console.error);
-        }
       } else if (action === "sell") {
-        if (p.trade_id) {
-          const pos = positions.find((pp) => pp.id === p.trade_id);
-          api.sellTrade(p.trade_id as string, pos?.shares ?? 0).then((r) => { toast(`Voice: sold ${p.symbol}, P&L $${r.pnl.toFixed(2)}`, r.pnl >= 0 ? "success" : "error"); void load(); }).catch(console.error);
-        }
-      } else if (action === "switch_tab") {
-        toast(`Voice: ${p.tab} tab`, "info");
+        toast(`Sold ${p.symbol}`, "success");
+        void load();
+      } else if (action === "scan_complete") {
+        toast(`Scan: ${p.count} candidates`, "success");
+        void load();
+      } else if (action === "show_events") {
+        setActiveTab("events");
+      } else if (action === "show_recommendations") {
+        setActiveTab("recs");
+      } else if (action === "open_settings") {
+        setSettingsOpen(true);
+      } else if (action === "close_settings") {
+        setSettingsOpen(false);
+      } else if (action === "open_help") {
+        setHelpOpen(true);
+      } else if (action === "close_help") {
+        setHelpOpen(false);
+      } else if (action === "filter_chat") {
+        setChatRoleFilter(p.value === "all" ? null : (p.value as string));
+      } else if (action === "mute" || action === "unmute") {
+        // handled by avatar component
+      } else if (action === "end_call") {
+        // handled by avatar component
       }
     } else if (type === "system") {
       if (p.type === "analysis_error") {
@@ -212,6 +227,8 @@ export default function Page() {
               events={events}
               recommendations={recommendations}
               activeSymbol={activeRec?.symbol}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
               onSelectEvent={(ev) => { setActiveRec(recommendations.find((r) => r.symbol === ev.symbol) ?? null); }}
               onSelectRecommendation={setActiveRec}
             />
@@ -237,7 +254,7 @@ export default function Page() {
               onExecute={onExecute}
               onReject={onReject}
             />
-            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} />
+            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
           </div>
           <div className="column">
             <AvatarAndPositions

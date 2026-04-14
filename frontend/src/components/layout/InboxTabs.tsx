@@ -7,6 +7,8 @@ type Props = {
   events: EventItem[];
   recommendations: Recommendation[];
   activeSymbol?: string | null;
+  activeTab?: "events" | "recs";
+  onTabChange?: (tab: "events" | "recs") => void;
   onSelectEvent: (event: EventItem) => void;
   onSelectRecommendation: (rec: Recommendation) => void;
 };
@@ -21,8 +23,10 @@ const DIR_COLORS: Record<string, string> = {
   BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
 };
 
-export function InboxTabs({ events, recommendations, activeSymbol, onSelectEvent, onSelectRecommendation }: Props) {
-  const [tab, setTab] = useState<"events" | "recs">("events");
+export function InboxTabs({ events, recommendations, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation }: Props) {
+  const [internalTab, setInternalTab] = useState<"events" | "recs">("events");
+  const tab = externalTab ?? internalTab;
+  const setTab = (t: "events" | "recs") => { setInternalTab(t); onTabChange?.(t); };
   const pendingCount = recommendations.filter((r) => PENDING.has(r.status) && r.direction && r.direction !== "PASS").length;
 
   // Dedupe events: show only the latest event per symbol

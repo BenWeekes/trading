@@ -414,3 +414,144 @@ Instead of stuffing all context into every LLM request, use the **Agora Agent Up
 8. **Remove regex voice commands** — LLM handles all intent via tools
 9. **Add confirmation flow** — tool calls for trades return "confirm?" before executing
 10. **Test streaming + tool calls** — ensure Agora SSE format works with two-turn tool flow
+
+---
+
+## Codex Review — Accepted Changes
+
+### 1. Use IDs not symbols for action tools — ACCEPTED
+
+All action tools (`approve_and_execute`, `sell_position`, `reject_recommendation`, `change_position_size`) must use `recommendation_id` or `trade_id` as the execution identity, not symbol. Multiple recs/positions for the same ticker is a real scenario.
+
+**How it works:** The LLM still references symbols in natural language ("buy NVDA"). The context block includes the active `recommendation_id`. The tool executor resolves symbol → active recommendation_id from context. If ambiguous, the LLM asks which one.
+
+**Updated tool parameters:**
+```json
+{
+  "name": "approve_and_execute",
+  "parameters": {
+    "recommendation_id": { "type": "string", "description": "From context. Use active recommendation_id." },
+    "amount_dollars": { "type": "number", "description": "Approximate dollar amount. Backend calculates exact shares." },
+    "notes": { "type": "string" }
+  }
+}
+```
+
+### 2. Reset conversation on symbol change — ACCEPTED
+
+When navigating to a new stock:
+1. Push new context via Agent Update API (already planned)
+2. **Also reset the agent conversation history** — clear message history so "do it" or "sell half" can't attach to the previous symbol
+3. The context block includes `active_recommendation_id` — all action tools must match this ID or be rejected
+
+**Rule:** Every action tool response includes the `recommendation_id` it acted on. If it doesn't match the current active ID, the backend rejects with "Recommendation has changed. Please confirm the current symbol."
+
+### 3. Backend computes shares, not LLM — ACCEPTED
+
+The LLM expresses **intent** ("about $10k", "half my position", "full size"), not exact share counts. The backend resolves intent to shares using:
+- Live market price from FMP
+- Risk settings (risk_per_trade_pct, conviction multiplier)
+- Current position size (for "sell half")
+- Portfolio cash (for "about $10k")
+
+**Updated tool parameters:**
+```json
+{
+  "name": "approve_and_execute",
+  "parameters": {
+    "recommendation_id": { "type": "string" },
+    "sizing_intent": { "type": "string", "enum": ["suggested", "full", "half", "quarter", "custom_dollars", "custom_shares"] },
+    "amount": { "type": "number", "description": "Dollar amount or share count depending on sizing_intent. Only needed for custom_dollars or custom_shares." },
+    "notes": { "type": "string" }
+  }
+}
+```
+
+The backend maps:
+- `"suggested"` → uses conviction-scaled position from recommendation
+- `"full"` → max size per risk settings
+- `"half"` → 50% of suggested
+- `"custom_dollars"` → amount / live_price, capped by risk limits
+- `"custom_shares"` → exact shares, capped by risk limits
+
+### 4. Lift internal component state for voice control — ACCEPTED
+
+InboxTabs tab state and GroupChat role filter state must be lifted to the page level and passed as props. This is real work (~30 min), not just "add SSE cases."
+
+**Changes needed:**
+- `InboxTabs`: accept `activeTab` + `onTabChange` props instead of internal useState
+- `GroupChat`: accept `roleFilter` + `onRoleFilterChange` props instead of internal useState  
+- `page.tsx`: add `activeTab` and `chatRoleFilter` state, pass down + handle in SSE
+
+### 5. Role message freshness rules — ACCEPTED (simplified)
+
+**Rule: latest 1 message per role per recommendation, with timestamp.**
+
+When building context for Agent Update:
+- For each role (research, risk, quant_pricing, trader): include the most recent `message_text` for the active recommendation
+- Include the timestamp so the LLM knows how fresh it is
+- If analysis updates mid-call (background scan completes), push new Agent Update immediately
+- If active recommendation changes, full context reset (see #2)
+
+**Not doing:** Version numbering, conflict resolution between multiple analysis passes, or complex staleness rules. Keep it simple — latest message wins, timestamp for awareness.
+
+### 6. Staged migration from regex to tool-calling — ACCEPTED
+
+**Phase A:** Keep regex fallback. Add tool-calling for read-only/navigation tools only (navigate, show tabs, open help/settings, portfolio status, recommendation detail). Regex still handles trade actions.
+
+**Phase B:** Add tool-calling for trade actions (approve, execute, sell, reject) with confirmation flow. Regex remains as fallback for unrecognized intents.
+
+**Phase C:** Remove regex parsing. All intent handled by LLM tools. Regex module stays in codebase but is disabled behind a feature flag.
+
+**Updated implementation steps:**
+1. Define tool schemas
+2. Build tool executor
+3. Build context builder + Agent Update client
+4. **Phase A:** Ship read-only tools (navigate, UI control, info queries)
+5. **Phase B:** Ship trade action tools with confirmation
+6. Lift component state for voice-controlled tabs/filters
+7. Push context on navigation + state changes
+8. **Phase C:** Disable regex fallback behind flag
+9. Test streaming + tool calls end-to-end
+
+---
+
+## Codex Points Not Accepted
+
+### None rejected outright
+
+All 6 points were valid and accepted. The only adjustment was simplifying #5 (role message freshness) — Codex suggested versioning rules, but "latest message per role with timestamp" is sufficient for this stage. If we find stale context is a real problem in testing, we add versioning then.
+
+---
+
+## Architecture Update: server-custom-llm
+
+The Agora `server-custom-llm` project already has full tool calling support:
+- Accepts tool definitions in requests
+- Accumulates streaming tool_call fragments
+- Executes tools server-side with multi-pass loop (up to 5 rounds)
+- Extensible tool registry via modules
+
+**Our approach:** Build a `trading_tools` module for server-custom-llm that:
+1. Registers all trading tool definitions (navigate, approve, sell, etc.)
+2. Each tool handler calls our trading backend API endpoints
+3. Context injected via Agent Update API, not per-request stuffing
+4. server-custom-llm handles the streaming + tool execution loop — we don't need to build that
+
+**Flow:**
+```
+User speaks → Agora → server-custom-llm (with trading_tools module)
+                          ↓
+                    OpenAI with tools defined
+                          ↓
+                    tool_call: approve_and_execute(rec_id, "custom_dollars", 10000)
+                          ↓
+                    trading_tools module:
+                      → calls backend /api/recs/{id}/approve
+                      → backend computes shares from $10k / live price
+                      → calls backend /api/recs/{id}/execute
+                      → returns: "Approved BUY NVDA 52 shares at $192.50"
+                          ↓
+                    LLM speaks: "I've approved buying 52 shares of NVDA at $192.50.
+                                 That's about $10,010. Cash is now $79,490."
+```

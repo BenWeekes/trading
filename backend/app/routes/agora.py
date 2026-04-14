@@ -66,8 +66,12 @@ async def trader_avatar_stop(payload: dict):
 
 @router.post("/agora/chat/completions")
 async def agora_chat_completions(payload: dict):
+    import json as _json
+    print(f"[agora-llm] incoming request: model={payload.get('model')} stream={payload.get('stream')} msgs={len(payload.get('messages', []))}")
+    print(f"[agora-llm] payload keys: {list(payload.keys())}")
     messages = payload.get("messages") or []
     if not messages:
+        print("[agora-llm] ERROR: no messages in payload")
         raise HTTPException(status_code=400, detail="messages are required")
     context = payload.get("context") or {}
     recommendation = _resolve_recommendation(context)

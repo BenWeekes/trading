@@ -170,6 +170,14 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "list_recommendations",
+            "description": "List all current recommendations with their status. Use when user asks 'what recommendations do we have', 'what trades are pending', 'what are we looking at'.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "scan_earnings",
             "description": "Run an earnings scan. Use when user says scan, find opportunities, what's new.",
             "parameters": {"type": "object", "properties": {}},
@@ -234,6 +242,8 @@ async def execute_tool(name: str, args: dict, session_id: str) -> str:
             return _exec_portfolio()
         elif name == "get_recommendation_detail":
             return _exec_rec_detail(args)
+        elif name == "list_recommendations":
+            return _exec_list_recs()
         elif name == "scan_earnings":
             return await _exec_scan()
         elif name == "ui_control":
@@ -429,6 +439,19 @@ def _exec_rec_detail(args: dict) -> str:
     return " ".join(parts)
 
 
+def _exec_list_recs() -> str:
+    recs = list_recommendations(limit=20)
+    if not recs:
+        return "No recommendations. Say 'scan' to find earnings opportunities."
+    lines = []
+    for r in recs:
+        direction = r.get("direction") or "pending"
+        conviction = r.get("conviction") or "?"
+        status = r["status"].replace("_", " ")
+        lines.append(f"{r['symbol']}: {direction}, conviction {conviction}/10, {status}")
+    return f"{len(recs)} recommendation{'s' if len(recs)!=1 else ''}: " + ". ".join(lines[:5])
+
+
 async def _exec_scan() -> str:
     import httpx
     async with httpx.AsyncClient(timeout=60) as c:
@@ -481,10 +504,31 @@ def build_voice_context(session_id: str) -> str:
     positions = get_positions()
     summary = get_summary(rec_id) if rec_id else None
 
-    parts = ["You are the Head Trader on a trading desk with voice control. Use tools to take actions. Keep spoken responses under 40 words. Always confirm before executing trades."]
+    parts = [
+        "You are the Head Trader on Trading Desk AI. You lead a desk with three AI roles:",
+        "- Research: analyses earnings quality, guidance, catalysts, counterpoints",
+        "- Risk: challenges thesis, flags portfolio risk, recommends position sizing",
+        "- Quant Pricing: sets entry zones, stop levels, target prices, volatility regime",
+        "",
+        "STRATEGY: PEAD V2 — post-earnings announcement drift. EPS surprise >=10%, revenue beat required, top 2 candidates per scan, 10 trading day hold, conviction-based sizing.",
+        "",
+        "RULES: Keep responses under 40 words. Use tools for ALL actions. Confirm before trades. When asked about recommendations, use the list_recommendations tool.",
+    ]
+
+    # All recommendations
+    all_recs = list_recommendations(limit=20)
+    actionable = [r for r in all_recs if r.get("direction") and r.get("direction") != "PASS"]
+    if actionable:
+        parts.append(f"\nALL RECOMMENDATIONS ({len(actionable)}):")
+        for r in actionable[:5]:
+            parts.append(f"  {r['symbol']}: {r.get('direction','?')} conviction {r.get('conviction','?')}/10, {r['status'].replace('_',' ')} (id: {r['id']})")
+    elif all_recs:
+        parts.append(f"\n{len(all_recs)} recommendations scanned but none actionable (all PASS or pending).")
+    else:
+        parts.append("\nNo recommendations yet. User should say 'scan' to find opportunities.")
 
     if rec:
-        parts.append(f"\nACTIVE: {rec['symbol']} — {rec.get('direction','pending')}, conviction {rec.get('conviction','?')}/10")
+        parts.append(f"\nACTIVE FOCUS: {rec['symbol']} — {rec.get('direction','pending')}, conviction {rec.get('conviction','?')}/10")
         parts.append(f"recommendation_id: {rec['id']}")
         parts.append(f"Status: {rec['status']}")
         if rec.get("entry_price"):
@@ -496,13 +540,13 @@ def build_voice_context(session_id: str) -> str:
                 parts.append(f"Research (bull): {summary['bull_case'][:150]}")
             if summary.get("bear_case"):
                 parts.append(f"Risk (bear): {summary['bear_case'][:150]}")
-    else:
-        parts.append("\nNo active recommendation. User should scan or navigate to a stock.")
 
     parts.append(f"\nPORTFOLIO: ${portfolio['portfolio_value']:,.0f} total, ${portfolio['cash']:,.0f} cash")
     if positions:
         for p in positions[:5]:
             parts.append(f"  Position: {p.get('direction','')} {p['symbol']} {p.get('shares',0):.0f}sh, P&L ${float(p.get('unrealized_pnl',0)):+.0f} (trade_id: {p['id']})")
+    else:
+        parts.append("  No open positions.")
 
     pending = _get_pending(session_id)
     if pending:

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # Defaults from operator spec — used when no DB value exists
 DEFAULTS: dict[str, str] = {
     # Strategy selection
-    "strategies_enabled": "PEAD",
+    "strategies_enabled": "PEAD_V2",
 
     # Universe filters
     "min_price": "5.0",

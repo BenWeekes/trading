@@ -44,15 +44,24 @@ def seed_role_configs() -> None:
 
 
 async def _exit_check_loop():
-    """Background loop: check exits every 60 seconds, independent of browser."""
+    """Background loop: check exits every 60 seconds, independent of browser.
+
+    NOTE: this runs in-process. If the app restarts or runs multiple workers,
+    exits may be delayed or duplicated. For production, replace with an external
+    scheduler (cron, celery, or cloud task queue).
+    """
     from .services.exit_manager import check_exits
     await asyncio.sleep(10)  # wait for startup
+    print("[exit-manager] background exit checker started (60s interval)")
     while True:
         try:
             closed = await check_exits()
             if closed:
                 for c in closed:
                     print(f"[exit-manager] auto-exit {c['symbol']}: {c['reason']} pnl={c['pnl']}")
+        except asyncio.CancelledError:
+            print("[exit-manager] background loop cancelled")
+            break
         except Exception as exc:
             print(f"[exit-manager] error: {exc}")
         await asyncio.sleep(60)

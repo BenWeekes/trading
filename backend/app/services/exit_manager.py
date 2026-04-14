@@ -14,6 +14,7 @@ from ..adapters.fmp import FMPClient
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import (
     get_all_strategy_settings,
+    get_recommendation,
     insert_execution,
     list_trades,
     update_trade,
@@ -29,16 +30,31 @@ def _trading_days_between(start: datetime, end: datetime) -> int:
     current = start
     while current < end:
         current += timedelta(days=1)
-        if current.weekday() < 5:  # Mon=0 .. Fri=4
+        if current.weekday() < 5:
             days += 1
     return days
+
+
+def _get_hold_days_for_trade(trade: dict, default_target: int, default_max: int) -> tuple[int, int]:
+    """Get hold period for a trade based on its strategy. Returns (target_trading_days, max_calendar_days)."""
+    rec_id = trade.get("recommendation_id")
+    if rec_id:
+        rec = get_recommendation(rec_id)
+        if rec:
+            horizon = rec.get("time_horizon", "")
+            # Parse "10 trading days" style
+            import re
+            m = re.search(r"(\d+)", horizon)
+            if m:
+                return int(m.group(1)), default_max
+    return default_target, default_max
 
 
 async def check_exits() -> list[dict]:
     """Check all open positions for exit conditions. Returns list of closed trades."""
     strat = get_all_strategy_settings()
-    target_hold = int(strat.get("target_hold_days", "10"))
-    max_hold = int(strat.get("max_hold_days", "30"))
+    default_target_hold = int(strat.get("target_hold_days", "10"))
+    default_max_hold = int(strat.get("max_hold_days", "30"))
 
     open_trades = list_trades(open_only=True)
     closed = []
@@ -91,9 +107,10 @@ async def check_exits() -> list[dict]:
                 if target and price >= target:
                     exit_reason = "target"
 
-        # Hold period — check target hold (trading days) and max hold (calendar days)
+        # Hold period — strategy-specific target hold + global max hold
         if not exit_reason and trade.get("opened_at"):
             try:
+                target_hold, max_hold = _get_hold_days_for_trade(trade, default_target_hold, default_max_hold)
                 opened = datetime.fromisoformat(trade["opened_at"].replace("Z", "+00:00"))
                 now_dt = datetime.now(opened.tzinfo)
                 trading_days = _trading_days_between(opened, now_dt)

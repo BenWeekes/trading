@@ -204,9 +204,66 @@ Agora expects SSE streaming. When the LLM returns a tool_call instead of text:
 
 This is a two-turn LLM call: first call returns tool_call, second call (with tool result) returns the spoken response.
 
-### Open Questions
+### Resolved Decisions
 
-1. Should the Trader LLM use the same model as the text Trader role (gpt-5.1) or a faster model for voice responsiveness?
-2. Should tool calls require verbal confirmation ("I'm about to buy 52 shares of NVDA at $192. Confirm?") before executing?
-3. Should the context include the full role message text or just structured summaries?
-4. Max context size — how many role messages to include before truncating?
+1. **Verbal confirmation required** before executing trades. LLM says "I'm about to buy 52 shares of NVDA at $192. Say confirm to proceed." Then executes on confirmation.
+2. **Agora handles TTS** — we don't control voice model, just the text content. TTS vendor/voice is set in the Agora backend .env profile.
+3. **Full role messages in context** — not just summaries. The Trader LLM should see exactly what Research, Risk, and Quant said.
+
+### Agent Update API — Mid-Call Context Injection
+
+Instead of stuffing all context into every LLM request, use the **Agora Agent Update API** to push context updates to the running agent. This is the same pattern used in the Shen.AI recipe for injecting camera vitals into the LLM prompt.
+
+**Endpoint:** `POST /api/conversational-ai-agent/v2/projects/{APP_ID}/agents/{agent_id}/update`
+
+**When to push updates:**
+- User navigates to a new stock → push that stock's role analysis + recommendation
+- Role analysis completes in background → push updated analysis
+- Trade executes → push updated portfolio state
+- Position closed/opened → push updated positions
+
+**Payload:**
+```json
+{
+  "system_messages": [
+    {
+      "role": "system",
+      "content": "[Trading Desk Context Update]\n\nACTIVE SYMBOL: NVDA\n\nRECOMMENDATION: BUY, conviction 8/10\nEntry: $192, Stop: $183, Target: $212\nStatus: awaiting_user_feedback\nShares: 52 (~$10,010)\n\nRESEARCH: Revenue-driven beat with raised guidance...\nRISK: Gap reversal risk, sector crowding. Size 0.75x...\nQUANT: Fair value $210. Signal STRONG. Entry 188-195...\n\nPORTFOLIO: Cash $89,500, 1 position (PLTR +$140), Total $95,200"
+    }
+  ]
+}
+```
+
+**Implementation flow:**
+```
+1. User clicks on NVDA in Events tab
+   → Frontend calls API to switch active rec
+   → Backend loads NVDA context (rec + role messages + portfolio)
+   → Backend calls Agora Agent Update API with new system prompt
+   → Next voice turn has full NVDA context
+
+2. Background analysis completes for META
+   → Backend publishes SSE (already done)
+   → If META is the active symbol, also push Agent Update
+
+3. User says "approve and execute"
+   → LLM calls approve_and_execute tool
+   → Backend executes, updates portfolio
+   → Backend pushes Agent Update with new portfolio state
+   → LLM confirms: "Done. Bought 52 shares at $192. Cash now $79,500."
+```
+
+**Required:** The running agent_id must be stored (already in our AvatarSession). The APP_ID and auth credentials come from the Agora backend config.
+
+### Implementation Steps (Updated)
+
+1. **Define tool schemas** as OpenAI function definitions
+2. **Build tool executor** — maps function names to backend actions
+3. **Build context builder** — assembles current state, full role messages, portfolio
+4. **Add Agent Update API client** to agora_bridge.py
+5. **Update `/api/agora/chat/completions`** — inject tools into the OpenAI call, handle tool_call responses with two-turn flow
+6. **Push context on navigation** — when active stock changes, call Agent Update
+7. **Push context on state changes** — analysis complete, trade executed, position closed
+8. **Remove regex voice commands** — LLM handles all intent via tools
+9. **Add confirmation flow** — tool calls for trades return "confirm?" before executing
+10. **Test streaming + tool calls** — ensure Agora SSE format works with two-turn tool flow

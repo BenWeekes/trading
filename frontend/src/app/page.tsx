@@ -155,28 +155,33 @@ export default function Page() {
               onSelectNews={(ev) => { setSelectedNews(ev); }} />
           </div>
 
-          {/* CENTER: Trade Panel + Avatar side by side, News/Chat below */}
+          {/* CENTER: either News reader (full height) or Trade Panel + Chat */}
           <div className="column">
-            <div style={{ display: "flex", gap: 12, height: 320, flexShrink: 0 }}>
-              <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-                <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
-                  onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
-                  onApprove={onApprove}
-                  onApproveAndExecute={async (shares) => {
-                    if (!activeRec) return;
-                    try { await api.readyForApproval(activeRec.id).catch(() => {}); await api.approve(activeRec.id, shares); await api.execute(activeRec.id);
-                      toast(`Executed ${activeRec.direction} ${activeRec.symbol} — ${shares} sh`, "success"); await load();
-                    } catch (err) { toast("Failed: " + (err instanceof Error ? err.message : ""), "error"); }
-                  }}
-                  onExecute={onExecute} onReject={onReject} />
-              </div>
-              <InlineAvatar recommendation={activeRec} avatarStatus={avatarStatus}
-                onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
-                onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
-            </div>
-            {selectedNews && <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />}
-            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} companyName={companyName}
-              roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
+            {selectedNews ? (
+              <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />
+            ) : (
+              <>
+                <div style={{ display: "flex", gap: 12, height: 320, flexShrink: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
+                    <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
+                      onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
+                      onApprove={onApprove}
+                      onApproveAndExecute={async (shares) => {
+                        if (!activeRec) return;
+                        try { await api.readyForApproval(activeRec.id).catch(() => {}); await api.approve(activeRec.id, shares); await api.execute(activeRec.id);
+                          toast(`Executed ${activeRec.direction} ${activeRec.symbol} — ${shares} sh`, "success"); await load();
+                        } catch (err) { toast("Failed: " + (err instanceof Error ? err.message : ""), "error"); }
+                      }}
+                      onExecute={onExecute} onReject={onReject} />
+                  </div>
+                  <InlineAvatar recommendation={activeRec} avatarStatus={avatarStatus}
+                    onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
+                    onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
+                </div>
+                <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} companyName={companyName}
+                  roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
+              </>
+            )}
           </div>
 
           {/* RIGHT: Market Lists */}

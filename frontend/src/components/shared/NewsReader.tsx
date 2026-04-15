@@ -15,7 +15,7 @@ export function NewsReader({ event, onClose }: Props) {
   };
 
   return (
-    <div className="panel" style={{ flexShrink: 0 }}>
+    <div className="panel" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div className="panel-header">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span className="badge" style={{
@@ -27,12 +27,12 @@ export function NewsReader({ event, onClose }: Props) {
         </div>
         <button className="btn" onClick={onClose} style={{ fontSize: 10, padding: "2px 8px" }}>✕</button>
       </div>
-      <div className="panel-body" style={{ maxHeight: 120, overflowY: "auto" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{event.headline}</div>
+      <div className="panel-body" style={{ flex: 1, overflowY: "auto" }}>
+        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 10, lineHeight: 1.4 }}>{event.headline}</div>
         {event.body_excerpt && (
-          <div style={{ fontSize: 13, color: "var(--text-soft)", lineHeight: 1.6 }}>{event.body_excerpt}</div>
+          <div style={{ fontSize: 14, color: "var(--text-soft)", lineHeight: 1.7 }}>{event.body_excerpt}</div>
         )}
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
           {new Date(event.timestamp).toLocaleString()}
         </div>
       </div>

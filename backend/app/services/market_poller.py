@@ -24,10 +24,29 @@ from ..services.event_bus import event_bus
 
 _fmp = FMPClient()
 
+# Major US stocks for the live ticker
+TICKER_UNIVERSE = [
+    # Mega cap tech
+    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "NFLX", "AMD",
+    # Large cap tech
+    "CRM", "PLTR", "INTC", "ORCL", "ADBE", "CSCO", "QCOM", "MU", "AMAT", "PANW",
+    # Finance
+    "JPM", "GS", "MS", "BAC", "WFC", "BLK", "C", "AXP",
+    # Healthcare
+    "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO",
+    # Consumer
+    "NKE", "SBUX", "MCD", "DIS", "HD", "WMT", "COST", "PG",
+    # Energy / Industrial
+    "XOM", "CVX", "BA", "CAT", "GE", "RTX",
+    # ETFs
+    "SPY", "QQQ", "IWM", "DIA",
+]
+
 # Track API call count for monitoring
 _call_count = 0
 _call_count_reset = time.time()
 _last_poll_summary: dict = {}
+_ticker_prices: dict[str, dict] = {}  # cache of latest prices
 
 
 def get_poll_stats() -> dict:
@@ -51,6 +70,40 @@ async def _safe_call(coro, label: str):
     except Exception as e:
         print(f"[poller] {label} error: {e}")
         return None
+
+
+async def poll_ticker_batch(batch: list[str]):
+    """Poll a batch of stocks for the live market ticker. ~5 stocks at a time."""
+    for symbol in batch:
+        quote = await _safe_call(_fmp.quote(symbol), f"ticker:{symbol}")
+        if not quote or not quote.get("price"):
+            continue
+        price = float(quote["price"])
+        prev = float(quote.get("previousClose") or price)
+        change = round(price - prev, 2)
+        change_pct = round(quote.get("changesPercentage", 0), 2)
+        volume = quote.get("volume")
+
+        old = _ticker_prices.get(symbol, {})
+        _ticker_prices[symbol] = {
+            "price": price, "change": change, "change_pct": change_pct,
+            "volume": volume, "prev_close": prev,
+            "day_high": quote.get("dayHigh"), "day_low": quote.get("dayLow"),
+        }
+
+        await event_bus.publish("price_update", {
+            "symbol": symbol,
+            "price": price,
+            "change": change,
+            "change_pct": change_pct,
+            "volume": volume,
+            "prev_price": old.get("price"),
+        })
+
+
+def get_ticker_prices() -> dict:
+    """Return all cached ticker prices."""
+    return dict(_ticker_prices)
 
 
 async def poll_position_quotes():
@@ -229,38 +282,44 @@ async def run_poller():
         print("[poller] FMP_API_KEY not set — poller disabled")
         return
 
-    print("[poller] starting market data poller")
+    print(f"[poller] starting market data poller — {len(TICKER_UNIVERSE)} stocks in universe")
     _call_count = 0
     _call_count_reset = time.time()
 
     tick = 0
+    batch_idx = 0
+    batch_size = 4  # 4 stocks per tick × tick every 2s = ~120 calls/min for ticker
+
     while True:
         try:
             cycle_start = time.time()
             tick += 1
 
-            # Every 15s — position quotes
-            await poll_position_quotes()
+            # Every 2s — cycle through ticker universe (4 stocks at a time)
+            batch = TICKER_UNIVERSE[batch_idx:batch_idx + batch_size]
+            if batch:
+                await poll_ticker_batch(batch)
+            batch_idx = (batch_idx + batch_size) % len(TICKER_UNIVERSE)
 
-            # Every 30s — recommendation quotes (on even ticks)
-            if tick % 2 == 0:
+            # Every 30s (tick 15) — position quotes for P&L
+            if tick % 15 == 0:
+                await poll_position_quotes()
+
+            # Every 60s (tick 30) — recommendation quotes
+            if tick % 30 == 0:
                 await poll_recommendation_quotes()
 
-            # Every 60s — SPY
-            if tick % 4 == 0:
-                await poll_spy()
-
-            # Every 2 min — stock news
-            if tick % 8 == 0:
+            # Every 2 min (tick 60) — stock news
+            if tick % 60 == 0:
                 await poll_stock_news()
 
-            # Every 5 min — general news + movers
-            if tick % 20 == 0:
+            # Every 5 min (tick 150) — general news + movers
+            if tick % 150 == 0:
                 await poll_general_news()
                 await poll_market_movers()
 
-            # Every 30 min — upcoming earnings
-            if tick % 120 == 0:
+            # Every 30 min (tick 900) — upcoming earnings
+            if tick % 900 == 0:
                 await poll_upcoming_earnings()
 
             elapsed = time.time() - cycle_start
@@ -276,7 +335,7 @@ async def run_poller():
                 "budget_pct": round(rate / 300 * 100, 1),
             }
 
-            if tick % 20 == 0:  # log every 5 min
+            if tick % 150 == 0:  # log every 5 min
                 print(f"[poller] tick={tick} calls={_call_count} rate={rate:.0f}/min ({rate/300*100:.1f}% budget)")
 
         except asyncio.CancelledError:
@@ -285,4 +344,4 @@ async def run_poller():
         except Exception as e:
             print(f"[poller] error: {e}")
 
-        await asyncio.sleep(15)  # base tick = 15 seconds
+        await asyncio.sleep(2)  # base tick = 2 seconds

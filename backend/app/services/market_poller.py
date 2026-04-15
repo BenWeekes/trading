@@ -1,155 +1,288 @@
-"""Market data poller — pulls FMP data on intervals and logs what's available.
+"""Market data poller — background loop pulling FMP data on intervals.
 
-Tested against FMP starter plan (300 calls/min):
-- batch-quote: NOT available (402)
-- individual quotes: work (1 call per symbol)
-- news/stock-latest: works (with or without symbol)
+Budget: 300 calls/min. Typical usage: ~15-30 calls/min (5-10%).
+Worst case (15 positions, 5 recs): ~72 calls/min (24%).
+
+Tested endpoints on starter plan:
+- quote (individual): works
+- batch-quote: 402 (premium only)
+- news/stock-latest: works
 - news/general-latest: works
-- biggest-gainers/losers: work
-- most-actives: works
+- biggest-gainers/losers/most-actives: work
 - earnings-calendar: works
-
-Strategy: use individual quotes for positions/watchlist, bulk endpoints for discovery.
 """
 from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 
 from ..adapters.fmp import FMPClient
 from ..config import get_settings
+from ..db.repositories import list_recommendations, list_trades, update_trade
+from ..services.event_bus import event_bus
 
+_fmp = FMPClient()
+
+# Track API call count for monitoring
+_call_count = 0
+_call_count_reset = time.time()
+_last_poll_summary: dict = {}
+
+
+def get_poll_stats() -> dict:
+    elapsed = time.time() - _call_count_reset
+    return {
+        "total_calls": _call_count,
+        "elapsed_minutes": round(elapsed / 60, 1),
+        "calls_per_minute": round(_call_count / (elapsed / 60), 1) if elapsed > 60 else _call_count,
+        "budget_pct": round((_call_count / (elapsed / 60)) / 300 * 100, 1) if elapsed > 60 else 0,
+        "last_poll": _last_poll_summary,
+    }
+
+
+async def _safe_call(coro, label: str):
+    """Call FMP and track count. Returns result or None on error."""
+    global _call_count
+    try:
+        result = await coro
+        _call_count += 1
+        return result
+    except Exception as e:
+        print(f"[poller] {label} error: {e}")
+        return None
+
+
+async def poll_position_quotes():
+    """Every 15s — quotes for open positions. Updates P&L in DB + publishes SSE."""
+    positions = list_trades(open_only=True)
+    if not positions:
+        return
+
+    symbols = list({t["symbol"] for t in positions if t.get("symbol")})
+    for symbol in symbols:
+        quote = await _safe_call(_fmp.quote(symbol), f"quote:{symbol}")
+        if not quote or not quote.get("price"):
+            continue
+        price = float(quote["price"])
+
+        for t in positions:
+            if t["symbol"] != symbol:
+                continue
+            entry = float(t.get("entry_price") or price)
+            shares = float(t.get("shares") or 0)
+            direction = (t.get("direction") or "BUY").upper()
+            pnl = (price - entry) * shares if direction != "SHORT" else (entry - price) * shares
+
+            update_trade(t["id"], current_price=price, unrealized_pnl=round(pnl, 2))
+
+        await event_bus.publish("position_update", {
+            "symbol": symbol, "price": price,
+            "change_pct": round(quote.get("changesPercentage", 0), 2),
+        })
+
+
+async def poll_recommendation_quotes():
+    """Every 30s — quotes for symbols with active recommendations."""
+    recs = list_recommendations(limit=10)
+    active_symbols = list({r["symbol"] for r in recs if r.get("symbol") and r["status"] not in ("closed", "rejected", "cancelled")})
+
+    # Skip symbols already covered by position quotes
+    position_symbols = {t["symbol"] for t in list_trades(open_only=True)}
+    symbols = [s for s in active_symbols if s not in position_symbols]
+
+    for symbol in symbols[:5]:  # cap at 5
+        quote = await _safe_call(_fmp.quote(symbol), f"rec-quote:{symbol}")
+        if not quote or not quote.get("price"):
+            continue
+        await event_bus.publish("price_update", {
+            "symbol": symbol,
+            "price": float(quote["price"]),
+            "change_pct": round(quote.get("changesPercentage", 0), 2),
+            "volume": quote.get("volume"),
+            "day_high": quote.get("dayHigh"),
+            "day_low": quote.get("dayLow"),
+        })
+
+
+async def poll_spy():
+    """Every 60s — SPY quote for regime check."""
+    quote = await _safe_call(_fmp.quote("SPY"), "spy")
+    if not quote:
+        return
+    await event_bus.publish("price_update", {
+        "symbol": "SPY",
+        "price": float(quote.get("price", 0)),
+        "change_pct": round(quote.get("changesPercentage", 0), 2),
+        "ma200": quote.get("priceAvg200"),
+    })
+
+
+async def poll_stock_news():
+    """Every 2 min — latest stock news across all markets."""
+    news = await _safe_call(_fmp.news("", limit=10), "stock-news")
+    if not news:
+        return
+    for n in news[:5]:
+        await event_bus.publish("market_event", {
+            "id": f"news_{hash(n.get('title',''))%100000}",
+            "type": "news",
+            "symbol": n.get("symbol"),
+            "headline": n.get("title", "")[:120],
+            "body_excerpt": (n.get("text") or "")[:200],
+            "source": n.get("site") or n.get("source"),
+            "timestamp": n.get("publishedDate") or datetime.utcnow().isoformat(),
+            "importance": 3,
+        })
+
+
+async def poll_general_news():
+    """Every 5 min — general market news."""
+    raw = await _safe_call(_fmp._get("news/general-latest", {"limit": 5}), "general-news")
+    if not raw or not isinstance(raw, list):
+        return
+    for n in raw[:3]:
+        await event_bus.publish("market_event", {
+            "id": f"gnews_{hash(n.get('title',''))%100000}",
+            "type": "macro",
+            "symbol": None,
+            "headline": n.get("title", "")[:120],
+            "body_excerpt": "",
+            "source": n.get("site") or n.get("source"),
+            "timestamp": n.get("publishedDate") or datetime.utcnow().isoformat(),
+            "importance": 2,
+        })
+
+
+async def poll_market_movers():
+    """Every 5 min — gainers, losers, most active."""
+    for name, method in [("gainers", _fmp.biggest_gainers), ("losers", _fmp.biggest_losers), ("most_active", _fmp.most_active)]:
+        data = await _safe_call(method(), name)
+        if not data:
+            continue
+        # Only publish top 3 as events
+        for d in data[:3]:
+            symbol = d.get("symbol")
+            change = round(d.get("changesPercentage", 0), 2)
+            if abs(change) < 5:  # only notable moves
+                continue
+            await event_bus.publish("market_event", {
+                "id": f"mover_{symbol}_{name}",
+                "type": "price_alert",
+                "symbol": symbol,
+                "headline": f"{symbol} {'up' if change > 0 else 'down'} {abs(change):.1f}% — top {name.replace('_', ' ')}",
+                "body_excerpt": f"Price: ${d.get('price', 0):.2f}",
+                "source": "FMP",
+                "timestamp": datetime.utcnow().isoformat(),
+                "importance": 4 if abs(change) > 10 else 3,
+            })
+
+
+async def poll_upcoming_earnings():
+    """Every 30 min — earnings in next 7 days."""
+    earnings = await _safe_call(_fmp.upcoming_earnings(days_ahead=7), "earnings")
+    if not earnings:
+        return
+    # Only care about stocks we hold or have recommendations for
+    watched = set()
+    for t in list_trades(open_only=True):
+        if t.get("symbol"):
+            watched.add(t["symbol"])
+    for r in list_recommendations(limit=20):
+        if r.get("symbol"):
+            watched.add(r["symbol"])
+
+    for e in earnings:
+        if e.get("symbol") in watched:
+            await event_bus.publish("market_event", {
+                "id": f"earn_{e['symbol']}_{e.get('date','')}",
+                "type": "earnings",
+                "symbol": e["symbol"],
+                "headline": f"{e['symbol']} reports earnings on {e.get('date', '?')}",
+                "body_excerpt": f"EPS est: {e.get('epsEstimated', '?')}",
+                "source": "FMP Calendar",
+                "timestamp": datetime.utcnow().isoformat(),
+                "importance": 5,
+            })
+
+
+# ── Background loop ──
 
 async def poll_all() -> dict:
-    """Poll all available FMP data sources. Returns a summary of what was fetched."""
-    fmp = FMPClient()
+    """One-shot poll of all data sources. Used by /api/poll-market endpoint."""
+    await poll_position_quotes()
+    await poll_recommendation_quotes()
+    await poll_spy()
+    await poll_stock_news()
+    await poll_general_news()
+    await poll_market_movers()
+    await poll_upcoming_earnings()
+    return get_poll_stats()
+
+
+async def run_poller():
+    """Main polling loop. Runs indefinitely with staggered intervals."""
+    global _last_poll_summary, _call_count, _call_count_reset
+
     settings = get_settings()
     if not settings.fmp_api_key:
-        return {"error": "FMP_API_KEY not configured"}
+        print("[poller] FMP_API_KEY not set — poller disabled")
+        return
 
-    results = {}
-    total_calls = 0
-    start = time.time()
+    print("[poller] starting market data poller")
+    _call_count = 0
+    _call_count_reset = time.time()
 
-    # 1. Individual quotes for key symbols (1 call each, but can run in parallel)
-    watchlist = ["NVDA", "AAPL", "MSFT", "META", "AMZN", "AMD", "PLTR", "SPY", "QQQ", "NKE"]
-    try:
-        quotes_raw = await asyncio.gather(*[fmp.quote(s) for s in watchlist], return_exceptions=True)
-        quotes = [q for q in quotes_raw if isinstance(q, dict) and q.get("symbol")]
-        results["quotes"] = {
-            "count": len(quotes),
-            "calls_used": len(watchlist),
-            "data": {q["symbol"]: {
-                "price": q.get("price"),
-                "change_pct": round(q.get("changesPercentage", 0), 2),
-                "volume": q.get("volume"),
-                "day_high": q.get("dayHigh"),
-                "day_low": q.get("dayLow"),
-                "prev_close": q.get("previousClose"),
-                "market_cap": q.get("marketCap"),
-            } for q in quotes},
-        }
-        total_calls += len(watchlist)
-        print(f"[poller] quotes: {len(quotes)}/{len(watchlist)} symbols ({len(watchlist)} calls)")
-    except Exception as e:
-        results["quotes"] = {"error": str(e)}
-        print(f"[poller] quotes FAILED: {e}")
-
-    # 2. Stock news — latest across market
-    try:
-        news = await fmp.news("", limit=20)  # empty symbol = all
-        if not news:
-            news = []
-            # Try without symbol param
-            raw = await fmp._get("news/stock-latest", {"limit": 20})
-            if isinstance(raw, list):
-                news = raw
-        results["stock_news"] = {
-            "count": len(news),
-            "data": [{
-                "title": n.get("title", "")[:100],
-                "symbol": n.get("symbol"),
-                "source": n.get("site") or n.get("source"),
-                "date": (n.get("publishedDate") or "")[:19],
-                "url": n.get("url"),
-            } for n in news[:10]],
-        }
-        total_calls += 1
-        print(f"[poller] stock_news: {len(news)} articles")
-    except Exception as e:
-        results["stock_news"] = {"error": str(e)}
-        print(f"[poller] stock_news FAILED: {e}")
-
-    # 3. General news
-    try:
-        raw = await fmp._get("news/general-latest", {"limit": 10})
-        gnews = raw if isinstance(raw, list) else []
-        results["general_news"] = {
-            "count": len(gnews),
-            "data": [{
-                "title": n.get("title", "")[:100],
-                "source": n.get("site") or n.get("source"),
-                "date": (n.get("publishedDate") or "")[:19],
-            } for n in gnews[:5]],
-        }
-        total_calls += 1
-        print(f"[poller] general_news: {len(gnews)} articles")
-    except Exception as e:
-        results["general_news"] = {"error": str(e)}
-        print(f"[poller] general_news FAILED: {e}")
-
-    # 4. Market movers (1 call each, no symbols needed)
-    for name, method in [("gainers", fmp.biggest_gainers), ("losers", fmp.biggest_losers), ("most_active", fmp.most_active)]:
+    tick = 0
+    while True:
         try:
-            data = await method()
-            results[name] = {
-                "count": len(data),
-                "data": [{
-                    "symbol": d.get("symbol"),
-                    "name": (d.get("name") or "")[:30],
-                    "price": d.get("price"),
-                    "change_pct": round(d.get("changesPercentage", 0), 2),
-                    "volume": d.get("volume"),
-                } for d in data[:10]],
+            cycle_start = time.time()
+            tick += 1
+
+            # Every 15s — position quotes
+            await poll_position_quotes()
+
+            # Every 30s — recommendation quotes (on even ticks)
+            if tick % 2 == 0:
+                await poll_recommendation_quotes()
+
+            # Every 60s — SPY
+            if tick % 4 == 0:
+                await poll_spy()
+
+            # Every 2 min — stock news
+            if tick % 8 == 0:
+                await poll_stock_news()
+
+            # Every 5 min — general news + movers
+            if tick % 20 == 0:
+                await poll_general_news()
+                await poll_market_movers()
+
+            # Every 30 min — upcoming earnings
+            if tick % 120 == 0:
+                await poll_upcoming_earnings()
+
+            elapsed = time.time() - cycle_start
+            total_elapsed = time.time() - _call_count_reset
+            rate = _call_count / (total_elapsed / 60) if total_elapsed > 60 else _call_count
+
+            _last_poll_summary = {
+                "tick": tick,
+                "cycle_ms": round(elapsed * 1000),
+                "total_calls": _call_count,
+                "minutes_running": round(total_elapsed / 60, 1),
+                "calls_per_min": round(rate, 1),
+                "budget_pct": round(rate / 300 * 100, 1),
             }
-            total_calls += 1
-            print(f"[poller] {name}: {len(data)} stocks")
+
+            if tick % 20 == 0:  # log every 5 min
+                print(f"[poller] tick={tick} calls={_call_count} rate={rate:.0f}/min ({rate/300*100:.1f}% budget)")
+
+        except asyncio.CancelledError:
+            print("[poller] cancelled")
+            break
         except Exception as e:
-            results[name] = {"error": str(e)}
-            print(f"[poller] {name} FAILED: {e}")
+            print(f"[poller] error: {e}")
 
-    # 5. Upcoming earnings (next 14 days)
-    try:
-        earnings = await fmp.upcoming_earnings(days_ahead=14)
-        # Filter to >$500M market cap symbols we care about
-        results["upcoming_earnings"] = {
-            "count": len(earnings),
-            "data": [{
-                "symbol": e.get("symbol"),
-                "date": e.get("date"),
-                "eps_estimated": e.get("epsEstimated"),
-                "revenue_estimated": e.get("revenueEstimated"),
-            } for e in earnings[:15]],
-        }
-        total_calls += 1
-        print(f"[poller] upcoming_earnings: {len(earnings)} events")
-    except Exception as e:
-        results["upcoming_earnings"] = {"error": str(e)}
-        print(f"[poller] upcoming_earnings FAILED: {e}")
-
-    elapsed = time.time() - start
-    summary = {
-        "total_api_calls": total_calls,
-        "elapsed_seconds": round(elapsed, 2),
-        "calls_per_minute_rate": round(total_calls / (elapsed / 60), 1) if elapsed > 0 else 0,
-        "budget_300_per_min": f"{total_calls}/300 used ({total_calls/300*100:.1f}%)",
-        "results": results,
-    }
-    print(f"\n[poller] DONE: {total_calls} calls in {elapsed:.1f}s")
-    return summary
-
-
-if __name__ == "__main__":
-    import json
-    result = asyncio.run(poll_all())
-    print("\n" + json.dumps(result, indent=2, default=str))
+        await asyncio.sleep(15)  # base tick = 15 seconds

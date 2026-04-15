@@ -23,6 +23,7 @@ export function useSSE(url: string, onMessage: (eventType: string, payload: unkn
       "cost_alert",
       "system",
       "voice_command",
+      "price_update",
     ];
     eventTypes.forEach((eventType) => {
       source.addEventListener(eventType, (event) => handler(event as MessageEvent, eventType));

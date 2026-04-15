@@ -43,6 +43,13 @@ def seed_role_configs() -> None:
         )
 
 
+async def _market_poller_loop():
+    """Background market data polling."""
+    from .services.market_poller import run_poller
+    await asyncio.sleep(5)
+    await run_poller()
+
+
 async def _exit_check_loop():
     """Background loop: check exits every 60 seconds, independent of browser.
 
@@ -71,9 +78,11 @@ async def _exit_check_loop():
 async def lifespan(app: FastAPI):
     init_db()
     seed_role_configs()
-    task = asyncio.create_task(_exit_check_loop())
+    exit_task = asyncio.create_task(_exit_check_loop())
+    poller_task = asyncio.create_task(_market_poller_loop())
     yield
-    task.cancel()
+    exit_task.cancel()
+    poller_task.cancel()
 
 
 settings = get_settings()

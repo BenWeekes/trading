@@ -122,8 +122,8 @@ export default function Page() {
 
           {/* CENTER: Trade Panel + Avatar side by side, Chat below */}
           <div className="column">
-            <div style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 12, height: 320, flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
                 <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
                   onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
                   onApprove={onApprove}

@@ -48,7 +48,7 @@ export function InlineAvatar({ recommendation, avatarStatus, onStart, onStop }: 
   }
 
   return (
-    <div className="panel" style={{ display: "flex", flexDirection: "column", width: 220, flexShrink: 0, alignSelf: "stretch", overflow: "hidden" }}>
+    <div className="panel" style={{ display: "flex", flexDirection: "column", width: 420, flexShrink: 0, alignSelf: "stretch", overflow: "hidden" }}>
       {/* Video area — stretches to fill */}
       <div
         ref={agora.videoContainerRef}

@@ -8,6 +8,7 @@ type TabId = "earnings" | "ai" | "news";
 type Props = {
   events: EventItem[];
   recommendations: Recommendation[];
+  companyNames?: Record<string, string>;
   activeSymbol?: string | null;
   activeTab?: TabId;
   onTabChange?: (tab: TabId) => void;
@@ -21,7 +22,7 @@ const DIR_COLORS: Record<string, string> = {
   BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
 };
 
-export function InboxTabs({ events, recommendations, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation, onSelectNews }: Props) {
+export function InboxTabs({ events, recommendations, companyNames = {}, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation, onSelectNews }: Props) {
   const [internalTab, setInternalTab] = useState<TabId>("earnings");
   const tab = externalTab ?? internalTab;
   const setTab = (t: TabId) => { setInternalTab(t); onTabChange?.(t); };
@@ -56,10 +57,15 @@ export function InboxTabs({ events, recommendations, activeSymbol, activeTab: ex
                 return (
                   <InboxItem key={ev.id} active={ev.symbol === activeSymbol} onClick={() => onSelectEvent(ev)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ fontSize: 13 }}>
-                        {ev.symbol ?? ev.type.toUpperCase()}
-                        {dir && <span style={{ color: DIR_COLORS[dir] ?? "var(--text-muted)" }}>: {dir}</span>}
-                      </strong>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>
+                          {ev.symbol ?? ev.type.toUpperCase()}
+                          {dir && <span style={{ color: DIR_COLORS[dir] ?? "var(--text-muted)" }}>: {dir}</span>}
+                        </strong>
+                        {ev.symbol && companyNames[ev.symbol] && (
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{companyNames[ev.symbol]}</div>
+                        )}
+                      </div>
                       <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
                         {new Date(ev.timestamp).toLocaleTimeString()}
                       </span>
@@ -82,9 +88,14 @@ export function InboxTabs({ events, recommendations, activeSymbol, activeTab: ex
                 .map((rec) => (
                   <InboxItem key={rec.id} active={rec.symbol === activeSymbol} onClick={() => onSelectRecommendation(rec)}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                      <strong style={{ fontSize: 13 }}>
-                        {rec.symbol}<span style={{ color: DIR_COLORS[rec.direction ?? ""] ?? "var(--text-muted)" }}>: {rec.direction ?? "?"}</span>
-                      </strong>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>
+                          {rec.symbol}<span style={{ color: DIR_COLORS[rec.direction ?? ""] ?? "var(--text-muted)" }}>: {rec.direction ?? "?"}</span>
+                        </strong>
+                        {companyNames[rec.symbol] && (
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{companyNames[rec.symbol]}</div>
+                        )}
+                      </div>
                       <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{rec.conviction ? `${rec.conviction}/10` : ""}</span>
                     </div>
                     <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
@@ -108,7 +119,12 @@ export function InboxTabs({ events, recommendations, activeSymbol, activeTab: ex
                   color: "inherit", cursor: "pointer",
                 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>{ev.symbol ?? ev.type}</span>
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{ev.symbol ?? ev.type}</span>
+                      {ev.symbol && companyNames[ev.symbol] && (
+                        <div style={{ fontSize: 9, color: "var(--text-muted)" }}>{companyNames[ev.symbol]}</div>
+                      )}
+                    </div>
                     <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{ev.source}</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>

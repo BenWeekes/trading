@@ -32,6 +32,7 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState<"earnings" | "ai" | "news">("earnings");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
+  const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
   const [selectedNews, setSelectedNews] = useState<EventItem | null>(null);
   const didInit = useRef(false);
   const didScan = useRef(false);
@@ -44,6 +45,25 @@ export default function Page() {
   }, []);
 
   useEffect(() => { load().catch(console.error); }, [load]);
+
+  // Fetch company names from ticker cache
+  useEffect(() => {
+    const fetchNames = async () => {
+      try {
+        const r = await fetch(`${streamUrl.replace('/api/stream', '/api/ticker')}`);
+        const d = await r.json();
+        const names: Record<string, string> = {};
+        for (const [sym, data] of Object.entries(d.prices || {})) {
+          const name = (data as { name?: string }).name;
+          if (name) names[sym] = name;
+        }
+        if (Object.keys(names).length > 0) setCompanyNames((prev) => ({ ...prev, ...names }));
+      } catch { /* ignore */ }
+    };
+    fetchNames();
+    const interval = setInterval(fetchNames, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-scan on first load if no recs exist
   useEffect(() => {
@@ -134,7 +154,7 @@ export default function Page() {
         <div className="workstation-body">
           {/* LEFT: News + Recommendations */}
           <div className="column">
-            <InboxTabs events={events} recommendations={recommendations} activeSymbol={activeRec?.symbol}
+            <InboxTabs events={events} recommendations={recommendations} companyNames={companyNames} activeSymbol={activeRec?.symbol}
               activeTab={activeTab} onTabChange={setActiveTab}
               onSelectEvent={async (ev) => {
                 setSelectedNews(null);

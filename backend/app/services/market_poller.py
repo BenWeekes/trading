@@ -20,7 +20,7 @@ from datetime import datetime
 from ..adapters.fmp import FMPClient
 from ..config import get_settings
 from ..db.helpers import new_id
-from ..db.repositories import insert_event, list_recommendations, list_trades, update_trade
+from ..db.repositories import insert_event, list_events, list_recommendations, list_trades, update_trade
 from ..services.event_bus import event_bus
 
 _fmp = FMPClient()
@@ -125,7 +125,12 @@ async def poll_stock_news():
     news = await _safe_call(_fmp.news("", limit=10), "stock-news")
     if not news:
         return
+    # Dedupe by headline against existing events
+    existing_headlines = {e["headline"] for e in list_events(limit=50)}
     for n in news[:5]:
+        headline = n.get("title", "")[:120]
+        if headline in existing_headlines:
+            continue
         event = {
             "id": new_id("evt"),
             "type": "news",
@@ -149,12 +154,16 @@ async def poll_general_news():
     raw = await _safe_call(_fmp._get("news/general-latest", {"limit": 5}), "general-news")
     if not raw or not isinstance(raw, list):
         return
+    existing_headlines = {e["headline"] for e in list_events(limit=50)}
     for n in raw[:3]:
+        headline = n.get("title", "")[:120]
+        if headline in existing_headlines:
+            continue
         event = {
             "id": new_id("evt"),
             "type": "macro",
             "symbol": None,
-            "headline": n.get("title", "")[:120],
+            "headline": headline,
             "body_excerpt": "",
             "source": n.get("site") or n.get("source"),
             "timestamp": n.get("publishedDate") or datetime.utcnow().isoformat(),
@@ -248,9 +257,22 @@ async def run_poller():
         print("[poller] FMP_API_KEY not set — poller disabled")
         return
 
-    print("[poller] starting market data poller — watching positions + recommendations + SPY")
+    print("[poller] starting market data poller — initial fetch + watching positions/recs/SPY")
     _call_count = 0
     _call_count_reset = time.time()
+
+    # Immediate initial fetch of everything on startup
+    try:
+        watched = _get_watched_symbols()
+        if watched:
+            await poll_ticker_batch(watched)
+        await poll_stock_news()
+        await poll_general_news()
+        await poll_upcoming_earnings()
+        await auto_scan()
+        print(f"[poller] initial fetch done — {_call_count} calls")
+    except Exception as e:
+        print(f"[poller] initial fetch error: {e}")
 
     tick = 0
 

@@ -155,7 +155,7 @@ input[type="number"] {
 
 .workstation-body {
   display: grid;
-  grid-template-columns: 280px 1fr 340px;
+  grid-template-columns: 260px 1fr 280px;
   gap: 16px;
   padding: 16px;
   min-height: 0;

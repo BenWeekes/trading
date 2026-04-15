@@ -116,7 +116,20 @@ export default function Page() {
           <div className="column">
             <InboxTabs events={events} recommendations={recommendations} activeSymbol={activeRec?.symbol}
               activeTab={activeTab} onTabChange={setActiveTab}
-              onSelectEvent={(ev) => setActiveRec(recommendations.find((r) => r.symbol === ev.symbol) ?? null)}
+              onSelectEvent={async (ev) => {
+                const rec = recommendations.find((r) => r.symbol === ev.symbol);
+                if (rec) { setActiveRec(rec); return; }
+                // No rec for this symbol — trigger analysis via discuss endpoint
+                if (ev.symbol) {
+                  toast(`Analysing ${ev.symbol}...`, "info");
+                  try {
+                    await api.scan(); // triggers background analysis
+                    await load();
+                    const newRec = recommendations.find((r) => r.symbol === ev.symbol);
+                    if (newRec) setActiveRec(newRec);
+                  } catch { /* ignore */ }
+                }
+              }}
               onSelectRecommendation={setActiveRec} />
           </div>
 

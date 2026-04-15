@@ -175,10 +175,10 @@ async def poll_market_movers():
         if not data:
             continue
         # Only publish top 3 as events
-        for d in data[:3]:
+        for d in data[:1]:  # only top 1 per category to reduce spam
             symbol = d.get("symbol")
             change = round(d.get("changesPercentage", 0), 2)
-            if abs(change) < 5:  # only notable moves
+            if abs(change) < 20:  # only very big moves
                 continue
             event = {
                 "id": new_id("evt"),

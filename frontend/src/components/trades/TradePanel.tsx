@@ -33,10 +33,13 @@ export function TradePanel({ recommendation, summary, companyName, onReady, onAp
 
   if (!rec) {
     return (
-      <div className="panel">
-        <div className="panel-header">Select an event or recommendation</div>
-        <div className="panel-body" style={{ color: "var(--text-muted)", textAlign: "center", padding: 20 }}>
-          Pick an item from the left to see the analysis and trade recommendation.
+      <div className="panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <div className="panel-header">Analysis</div>
+        <div className="panel-body" style={{ color: "var(--text-muted)", textAlign: "center", padding: 24, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div>
+            <div style={{ fontSize: 24, opacity: 0.3, marginBottom: 8 }}>📊</div>
+            <div>Select a stock from the news feed or market lists to see the AI analysis.</div>
+          </div>
         </div>
       </div>
     );

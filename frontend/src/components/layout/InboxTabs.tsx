@@ -28,7 +28,7 @@ export function InboxTabs({ events, recommendations, activeSymbol, activeTab: ex
 
   // Split events
   const earningsEvents = events.filter((e) => e.type === "earnings");
-  const newsEvents = events.filter((e) => e.type !== "earnings");
+  const newsEvents = events.filter((e) => e.type !== "earnings" && e.type !== "price_alert");
 
   // AI recs — actionable only
   const aiRecs = recommendations.filter((r) => r.direction && r.direction !== "PASS");

@@ -169,33 +169,10 @@ async def poll_general_news():
 
 
 async def poll_market_movers():
-    """Every 5 min — gainers, losers, most active."""
-    for name, method in [("gainers", _fmp.biggest_gainers), ("losers", _fmp.biggest_losers), ("most_active", _fmp.most_active)]:
-        data = await _safe_call(method(), name)
-        if not data:
-            continue
-        # Only publish top 3 as events
-        for d in data[:1]:  # only top 1 per category to reduce spam
-            symbol = d.get("symbol")
-            change = round(d.get("changesPercentage", 0), 2)
-            if abs(change) < 20:  # only very big moves
-                continue
-            event = {
-                "id": new_id("evt"),
-                "type": "price_alert",
-                "symbol": symbol,
-                "headline": f"{symbol} {'up' if change > 0 else 'down'} {abs(change):.1f}% — top {name.replace('_', ' ')}",
-                "body_excerpt": f"Price: ${d.get('price', 0):.2f}",
-                "source": "FMP",
-                "timestamp": datetime.utcnow().isoformat(),
-                "importance": 4 if abs(change) > 10 else 3,
-                "linked_recommendation_ids": [],
-            }
-            try:
-                insert_event(event)
-            except Exception:
-                pass
-            await event_bus.publish("market_event", event)
+    """Every 5 min — gainers, losers, most active. Data goes to market pulse cache only, not events."""
+    # This data feeds the right-column market lists via /api/market-pulse
+    # No need to persist as events — would just clutter the news feed
+    pass  # market pulse poller handles this separately
 
 
 async def poll_upcoming_earnings():

@@ -19,7 +19,8 @@ from datetime import datetime
 
 from ..adapters.fmp import FMPClient
 from ..config import get_settings
-from ..db.repositories import list_recommendations, list_trades, update_trade
+from ..db.helpers import new_id
+from ..db.repositories import insert_event, list_recommendations, list_trades, update_trade
 from ..services.event_bus import event_bus
 
 _fmp = FMPClient()
@@ -120,8 +121,8 @@ async def poll_stock_news():
     if not news:
         return
     for n in news[:5]:
-        await event_bus.publish("market_event", {
-            "id": f"news_{hash(n.get('title',''))%100000}",
+        event = {
+            "id": new_id("evt"),
             "type": "news",
             "symbol": n.get("symbol"),
             "headline": n.get("title", "")[:120],
@@ -129,7 +130,13 @@ async def poll_stock_news():
             "source": n.get("site") or n.get("source"),
             "timestamp": n.get("publishedDate") or datetime.utcnow().isoformat(),
             "importance": 3,
-        })
+            "linked_recommendation_ids": [],
+        }
+        try:
+            insert_event(event)
+        except Exception:
+            pass  # duplicate
+        await event_bus.publish("market_event", event)
 
 
 async def poll_general_news():
@@ -138,8 +145,8 @@ async def poll_general_news():
     if not raw or not isinstance(raw, list):
         return
     for n in raw[:3]:
-        await event_bus.publish("market_event", {
-            "id": f"gnews_{hash(n.get('title',''))%100000}",
+        event = {
+            "id": new_id("evt"),
             "type": "macro",
             "symbol": None,
             "headline": n.get("title", "")[:120],
@@ -147,7 +154,13 @@ async def poll_general_news():
             "source": n.get("site") or n.get("source"),
             "timestamp": n.get("publishedDate") or datetime.utcnow().isoformat(),
             "importance": 2,
-        })
+            "linked_recommendation_ids": [],
+        }
+        try:
+            insert_event(event)
+        except Exception:
+            pass
+        await event_bus.publish("market_event", event)
 
 
 async def poll_market_movers():
@@ -162,8 +175,8 @@ async def poll_market_movers():
             change = round(d.get("changesPercentage", 0), 2)
             if abs(change) < 5:  # only notable moves
                 continue
-            await event_bus.publish("market_event", {
-                "id": f"mover_{symbol}_{name}",
+            event = {
+                "id": new_id("evt"),
                 "type": "price_alert",
                 "symbol": symbol,
                 "headline": f"{symbol} {'up' if change > 0 else 'down'} {abs(change):.1f}% — top {name.replace('_', ' ')}",
@@ -171,7 +184,13 @@ async def poll_market_movers():
                 "source": "FMP",
                 "timestamp": datetime.utcnow().isoformat(),
                 "importance": 4 if abs(change) > 10 else 3,
-            })
+                "linked_recommendation_ids": [],
+            }
+            try:
+                insert_event(event)
+            except Exception:
+                pass
+            await event_bus.publish("market_event", event)
 
 
 async def poll_upcoming_earnings():
@@ -190,8 +209,8 @@ async def poll_upcoming_earnings():
 
     for e in earnings:
         if e.get("symbol") in watched:
-            await event_bus.publish("market_event", {
-                "id": f"earn_{e['symbol']}_{e.get('date','')}",
+            event = {
+                "id": new_id("evt"),
                 "type": "earnings",
                 "symbol": e["symbol"],
                 "headline": f"{e['symbol']} reports earnings on {e.get('date', '?')}",
@@ -199,7 +218,13 @@ async def poll_upcoming_earnings():
                 "source": "FMP Calendar",
                 "timestamp": datetime.utcnow().isoformat(),
                 "importance": 5,
-            })
+                "linked_recommendation_ids": [],
+            }
+            try:
+                insert_event(event)
+            except Exception:
+                pass
+            await event_bus.publish("market_event", event)
 
 
 # ── Background loop ──

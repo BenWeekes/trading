@@ -11,6 +11,7 @@ import { MarketLists } from "@/components/trades/MarketLists";
 import { ToastContainer, toast } from "@/components/shared/Toast";
 import { SettingsPanel } from "@/components/shared/SettingsPanel";
 import { HelpPanel } from "@/components/shared/HelpPanel";
+import { NewsReader } from "@/components/shared/NewsReader";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
 import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
@@ -31,7 +32,9 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState<"earnings" | "ai" | "news">("earnings");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
+  const [selectedNews, setSelectedNews] = useState<EventItem | null>(null);
   const didInit = useRef(false);
+  const didScan = useRef(false);
 
   const load = useCallback(async () => {
     const [ev, rec, pos, port] = await Promise.all([api.events(), api.recs(), api.positions(), api.portfolio()]);
@@ -41,6 +44,22 @@ export default function Page() {
   }, []);
 
   useEffect(() => { load().catch(console.error); }, [load]);
+
+  // Auto-scan on first load if no recs exist
+  useEffect(() => {
+    if (didScan.current) return;
+    didScan.current = true;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api.recs();
+        if (r.recommendations.length === 0) {
+          await api.scan();
+          await load();
+        }
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [load]);
 
   const activeRecId = activeRec?.id;
   useEffect(() => {
@@ -118,6 +137,7 @@ export default function Page() {
             <InboxTabs events={events} recommendations={recommendations} activeSymbol={activeRec?.symbol}
               activeTab={activeTab} onTabChange={setActiveTab}
               onSelectEvent={async (ev) => {
+                setSelectedNews(null);
                 const rec = recommendations.find((r) => r.symbol === ev.symbol);
                 if (rec) { setActiveRec(rec); return; }
                 // No rec for this symbol — trigger analysis via discuss endpoint
@@ -131,10 +151,11 @@ export default function Page() {
                   } catch { /* ignore */ }
                 }
               }}
-              onSelectRecommendation={setActiveRec} />
+              onSelectRecommendation={(rec) => { setSelectedNews(null); setActiveRec(rec); }}
+              onSelectNews={(ev) => { setSelectedNews(ev); }} />
           </div>
 
-          {/* CENTER: Trade Panel + Avatar side by side, Chat below */}
+          {/* CENTER: Trade Panel + Avatar side by side, News/Chat below */}
           <div className="column">
             <div style={{ display: "flex", gap: 12, height: 320, flexShrink: 0 }}>
               <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
@@ -153,6 +174,7 @@ export default function Page() {
                 onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
                 onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
             </div>
+            {selectedNews && <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />}
             <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} companyName={companyName}
               roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
           </div>

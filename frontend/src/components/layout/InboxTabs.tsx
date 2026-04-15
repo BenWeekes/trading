@@ -13,6 +13,7 @@ type Props = {
   onTabChange?: (tab: TabId) => void;
   onSelectEvent: (event: EventItem) => void;
   onSelectRecommendation: (rec: Recommendation) => void;
+  onSelectNews?: (event: EventItem) => void;
 };
 
 const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
@@ -20,7 +21,7 @@ const DIR_COLORS: Record<string, string> = {
   BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
 };
 
-export function InboxTabs({ events, recommendations, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation }: Props) {
+export function InboxTabs({ events, recommendations, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation, onSelectNews }: Props) {
   const [internalTab, setInternalTab] = useState<TabId>("earnings");
   const tab = externalTab ?? internalTab;
   const setTab = (t: TabId) => { setInternalTab(t); onTabChange?.(t); };
@@ -101,13 +102,17 @@ export function InboxTabs({ events, recommendations, activeSymbol, activeTab: ex
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {newsEvents.map((ev) => (
-                <div key={ev.id} style={{ padding: "8px 12px", borderRadius: 8, borderBottom: "1px solid var(--line)" }}>
+                <button key={ev.id} onClick={() => onSelectNews?.(ev)} style={{
+                  textAlign: "left", width: "100%", padding: "8px 12px", borderRadius: 8,
+                  background: "transparent", border: "none", borderBottom: "1px solid var(--line)",
+                  color: "inherit", cursor: "pointer",
+                }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>{ev.symbol ?? ev.type}</span>
                     <span style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{ev.source}</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-soft)", marginTop: 2 }}>{ev.headline}</div>
-                </div>
+                </button>
               ))}
             </div>
           )

@@ -78,6 +78,17 @@ async def market_pulse():
     return get_pulse_data()
 
 
+@router.get("/company-name")
+async def company_name(symbol: str = ""):
+    """Get company name for a symbol from ticker cache or FMP."""
+    prices = get_ticker_prices()
+    if symbol in prices and prices[symbol].get("name"):
+        return {"symbol": symbol, "name": prices[symbol]["name"]}
+    # Fallback: live FMP call
+    quote = await _fmp.quote(symbol)
+    return {"symbol": symbol, "name": quote.get("name", symbol) if quote else symbol}
+
+
 @router.get("/ticker")
 async def ticker():
     """Get all cached stock prices from the market ticker."""

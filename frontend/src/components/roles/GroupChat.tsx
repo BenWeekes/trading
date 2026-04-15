@@ -7,6 +7,7 @@ type Props = {
   messages: RoleMessage[];
   onSend: (message: string) => void;
   activeSymbol?: string | null;
+  companyName?: string;
   roleFilter?: string | null;
   onRoleFilterChange?: (role: string | null) => void;
 };
@@ -26,7 +27,7 @@ function senderInfo(sender: string, role: string) {
   return ROLE_MAP[key] ?? ROLE_MAP[role] ?? { icon: "\u{1F916}", label: role, color: "var(--text-soft)" };
 }
 
-export function GroupChat({ messages, onSend, activeSymbol, roleFilter: externalFilter, onRoleFilterChange }: Props) {
+export function GroupChat({ messages, onSend, activeSymbol, companyName, roleFilter: externalFilter, onRoleFilterChange }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
@@ -99,7 +100,7 @@ export function GroupChat({ messages, onSend, activeSymbol, roleFilter: external
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="panel-header" style={{ flexWrap: "wrap", gap: 6 }}>
-        <span>Desk Chat {activeSymbol ? `\u2014 ${activeSymbol}` : ""}</span>
+        <span>Desk Chat {activeSymbol ? `\u2014 ${activeSymbol}${companyName ? ` ${companyName}` : ""}` : ""}</span>
         <div style={{ display: "flex", gap: 3 }}>
           <FilterChip active={roleFilter === null} onClick={() => setRoleFilter(null)} color="var(--text-soft)">All</FilterChip>
           {ROLES.map((r) => (

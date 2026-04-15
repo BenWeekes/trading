@@ -30,6 +30,7 @@ export default function Page() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"events" | "recs">("events");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
+  const [companyName, setCompanyName] = useState("");
   const didInit = useRef(false);
 
   const load = useCallback(async () => {
@@ -46,6 +47,7 @@ export default function Page() {
     if (!activeRecId) return;
     api.rec(activeRecId).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
     api.traderAvatarStatus(activeRecId).then(setAvatarStatus).catch(console.error);
+    if (activeRec?.symbol) api.companyName(activeRec.symbol).then((d) => setCompanyName(d.name)).catch(() => {});
   }, [activeRecId]);
 
   useSSE(streamUrl, useCallback((type: string, payload: unknown) => {
@@ -122,7 +124,7 @@ export default function Page() {
           <div className="column">
             <div style={{ display: "flex", gap: 12, alignItems: "stretch" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <TradePanel recommendation={activeRec} summary={summary}
+                <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
                   onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
                   onApprove={onApprove}
                   onApproveAndExecute={async (shares) => {
@@ -137,7 +139,7 @@ export default function Page() {
                 onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
                 onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
             </div>
-            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol}
+            <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} companyName={companyName}
               roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
           </div>
 

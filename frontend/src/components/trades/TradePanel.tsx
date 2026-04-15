@@ -6,6 +6,7 @@ import { Recommendation, Summary } from "@/lib/types";
 type Props = {
   recommendation?: Recommendation | null;
   summary?: Summary | null;
+  companyName?: string;
   onReady: () => void;
   onApprove: (shares: number) => void;
   onApproveAndExecute: (shares: number) => void;
@@ -22,7 +23,7 @@ const ACTION_TIPS: Record<string, string> = {
   COVER: "Close a short position", PASS: "No action — best move is to wait",
 };
 
-export function TradePanel({ recommendation, summary, onReady, onApprove, onApproveAndExecute, onExecute, onReject }: Props) {
+export function TradePanel({ recommendation, summary, companyName, onReady, onApprove, onApproveAndExecute, onExecute, onReject }: Props) {
   const rec = recommendation;
   const [shares, setShares] = useState(rec?.position_size_shares ?? 10);
 
@@ -57,6 +58,7 @@ export function TradePanel({ recommendation, summary, onReady, onApprove, onAppr
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span data-tooltip={ACTION_TIPS[action]} style={{ color, fontWeight: 700, fontSize: 14 }}>{action}</span>
           <span style={{ fontWeight: 700, fontSize: 14 }}>{rec.symbol}</span>
+          {companyName && <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11 }}>{companyName}</span>}
           {rec.conviction != null && (
             <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 12 }}>Conviction {rec.conviction}/10</span>
           )}

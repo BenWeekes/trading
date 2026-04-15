@@ -84,10 +84,15 @@ async def poll_ticker_batch(batch: list[str]):
         volume = quote.get("volume")
 
         old = _ticker_prices.get(symbol, {})
+        old_price = old.get("price", 0)
+        direction = "up" if old_price and price > old_price else "down" if old_price and price < old_price else "same"
         _ticker_prices[symbol] = {
+            "symbol": symbol,
+            "name": quote.get("name") or old.get("name", ""),
             "price": price, "change": change, "change_pct": change_pct,
             "volume": volume, "prev_close": prev,
             "day_high": quote.get("dayHigh"), "day_low": quote.get("dayLow"),
+            "direction": direction,
         }
 
         # Update P&L on open positions

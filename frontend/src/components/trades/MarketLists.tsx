@@ -51,16 +51,25 @@ export function MarketLists({ positions, activeSymbol, onSell, onSelectSymbol }:
   const gainers = pulseStocks.filter((s) => s.change_pct > 0).sort((a, b) => b.change_pct - a.change_pct);
   const losers = pulseStocks.filter((s) => s.change_pct < 0).sort((a, b) => a.change_pct - b.change_pct);
   const active = [...pulseStocks].sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct));
-  const allSymbols = Object.entries(tickerPrices).sort(([a], [b]) => a.localeCompare(b)).map(([sym, data]) => {
-    const { symbol: _s, ...rest } = data as PulseStock;
-    return { ...rest, symbol: sym } as PulseStock;
-  });
+  // "All" combines everything: pulse stocks + ticker prices, deduped, sorted A-Z
+  const allMap = new Map<string, PulseStock>();
+  for (const s of pulseStocks) allMap.set(s.symbol, s);
+  for (const [sym, data] of Object.entries(tickerPrices)) {
+    if (!allMap.has(sym)) allMap.set(sym, { symbol: sym, name: "", price: 0, change: 0, change_pct: 0, direction: "same", ...(data as object) } as PulseStock);
+  }
+  // Also include position symbols
+  for (const pos of positions) {
+    if (pos.symbol && !allMap.has(pos.symbol)) {
+      allMap.set(pos.symbol, { symbol: pos.symbol, name: "", price: Number(pos.current_price ?? 0), change: 0, change_pct: 0, direction: "same" });
+    }
+  }
+  const allSymbols = [...allMap.values()].sort((a, b) => a.symbol.localeCompare(b.symbol));
 
   return (
     <div className="panel" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* Tabs */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
-        {([["open", `Open (${positions.length})`], ["all", "All"], ["gainers", "▲"], ["losers", "▼"], ["active", "◆"]] as [Tab, string][]).map(([t, label]) => (
+        {([["open", `Open (${positions.length})`], ["all", `All (${allSymbols.length})`], ["gainers", "▲"], ["losers", "▼"], ["active", "◆"]] as [Tab, string][]).map(([t, label]) => (
           <button
             key={t}
             onClick={() => setTab(t)}

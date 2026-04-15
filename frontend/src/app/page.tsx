@@ -104,7 +104,7 @@ export default function Page() {
         unrealised_pnl: Number(portfolio.unrealised_pnl ?? portfolio.unrealized_pnl ?? 0),
         daily_change: Number(portfolio.daily_change ?? 0), daily_change_pct: Number(portfolio.daily_change_pct ?? 0),
         open_positions: Number(portfolio.open_positions ?? 0),
-      }} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
+      }} mode={mode} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
 
       {!hasContent ? (
         <EmptyState onScan={onScan} scanning={scanning} />

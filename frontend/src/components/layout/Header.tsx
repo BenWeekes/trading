@@ -46,7 +46,6 @@ export function Header({ portfolio, mode, onScan, onSettings, onHelp }: Props) {
       </div>
 
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        {onScan && <button className="btn btn-accent" onClick={onScan}>Scan</button>}
         {onSettings && <button className="btn" onClick={onSettings}>Settings</button>}
         {onHelp && <button className="btn" onClick={onHelp}>Help</button>}
 

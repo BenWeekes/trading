@@ -48,23 +48,25 @@ export function InlineAvatar({ recommendation, avatarStatus, onStart, onStop }: 
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 160 }}>
-      {/* Video area */}
+    <div className="panel" style={{ display: "flex", flexDirection: "column", minWidth: 180, alignSelf: "stretch", overflow: "hidden" }}>
+      {/* Video area — stretches to fill */}
       <div
         ref={agora.videoContainerRef}
         style={{
-          background: "#060d18", height: 120, borderRadius: "8px 8px 0 0",
+          background: "#060d18", flex: 1, minHeight: 140,
           display: isLive && agora.hasVideo ? "block" : "flex",
           alignItems: "center", justifyContent: "center", overflow: "hidden",
         }}
       >
         {!isLive && (
-          <div style={{ color: "var(--text-muted)", fontSize: 11, textAlign: "center", padding: 12 }}>
-            {starting ? "Connecting..." : "Trader Avatar"}
+          <div style={{ color: "var(--text-muted)", fontSize: 12, textAlign: "center", padding: 16 }}>
+            <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.3 }}>💼</div>
+            {starting ? "Connecting..." : "Trader"}
           </div>
         )}
         {isLive && !agora.hasVideo && (
-          <div style={{ color: "var(--accent)", fontSize: 11, textAlign: "center", padding: 12 }}>
+          <div style={{ color: "var(--accent)", fontSize: 12, textAlign: "center", padding: 16 }}>
+            <div style={{ fontSize: 28, marginBottom: 8 }}>🎤</div>
             {agora.hasAudio ? "Audio live" : "Connecting..."}
           </div>
         )}
@@ -72,8 +74,7 @@ export function InlineAvatar({ recommendation, avatarStatus, onStart, onStop }: 
 
       {/* Controls */}
       <div style={{
-        display: "flex", gap: 4, justifyContent: "center", padding: "6px 8px",
-        background: "var(--bg-panel-soft)", borderRadius: "0 0 8px 8px",
+        display: "flex", gap: 6, justifyContent: "center", padding: "8px 10px",
         borderTop: "1px solid var(--line)",
       }}>
         {!isLive ? (

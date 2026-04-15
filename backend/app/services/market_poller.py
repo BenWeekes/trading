@@ -232,6 +232,22 @@ async def poll_upcoming_earnings():
             await event_bus.publish("market_event", event)
 
 
+async def auto_scan():
+    """Every 30 min — run earnings scan automatically. Same as manual scan but background."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.post("http://localhost:8000/api/scan")
+            if r.status_code == 200:
+                data = r.json()
+                count = len(data.get("results", []))
+                if count > 0:
+                    print(f"[poller] auto-scan: {count} candidates found")
+                    await event_bus.publish("system", {"type": "scan_complete", "count": count})
+    except Exception as e:
+        print(f"[poller] auto-scan error: {e}")
+
+
 # ── Background loop ──
 
 async def poll_all() -> dict:
@@ -280,9 +296,10 @@ async def run_poller():
                 await poll_general_news()
                 await poll_market_movers()
 
-            # Every 30 min (tick 120) — upcoming earnings
+            # Every 30 min (tick 120) — upcoming earnings + auto-scan
             if tick % 120 == 0:
                 await poll_upcoming_earnings()
+                await auto_scan()
 
             elapsed = time.time() - cycle_start
             total_elapsed = time.time() - _call_count_reset

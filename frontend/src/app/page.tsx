@@ -28,7 +28,7 @@ export default function Page() {
   const [scanning, setScanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"events" | "recs">("events");
+  const [activeTab, setActiveTab] = useState<"earnings" | "ai" | "news">("earnings");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
   const didInit = useRef(false);
@@ -64,8 +64,8 @@ export default function Page() {
       else if (a === "reject") { toast(`Rejected ${p.symbol}`, "info"); void load(); }
       else if (a === "sell") { toast(`Sold ${p.symbol}`, "success"); void load(); }
       else if (a === "scan_complete") { toast(`Scan: ${p.count} candidates`, "success"); void load(); }
-      else if (a === "show_events") setActiveTab("events");
-      else if (a === "show_recommendations") setActiveTab("recs");
+      else if (a === "show_events") setActiveTab("earnings");
+      else if (a === "show_recommendations") setActiveTab("ai");
       else if (a === "open_settings") setSettingsOpen(true);
       else if (a === "close_settings") setSettingsOpen(false);
       else if (a === "open_help") setHelpOpen(true);
@@ -108,8 +108,9 @@ export default function Page() {
         open_positions: Number(portfolio.open_positions ?? 0),
       }} mode={mode} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
 
+
       {!hasContent ? (
-        <EmptyState onScan={onScan} scanning={scanning} />
+        <EmptyState />
       ) : (
         <div className="workstation-body">
           {/* LEFT: News + Recommendations */}
@@ -171,7 +172,7 @@ export default function Page() {
   );
 }
 
-function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolean }) {
+function EmptyState() {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: 48 }}>
       <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, var(--accent), #60a5fa)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -181,9 +182,9 @@ function EmptyState({ onScan, scanning }: { onScan: () => void; scanning: boolea
       </div>
       <div style={{ fontSize: 20, fontWeight: 600 }}>Trading Desk AI</div>
       <div style={{ color: "var(--text-soft)", maxWidth: 480, textAlign: "center", lineHeight: 1.7 }}>
-        Multi-role AI trading desk. News and market data flow in automatically.
+        Market news and earnings scan automatically. Earnings events, AI recommendations, and live prices will appear as they arrive.
       </div>
-      <button className="btn btn-accent" onClick={onScan} disabled={scanning}>{scanning ? "Scanning..." : "Scan Earnings"}</button>
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Start a voice call with the trader avatar to interact by voice.</div>
     </div>
   );
 }

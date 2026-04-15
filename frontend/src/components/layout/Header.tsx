@@ -10,12 +10,11 @@ type PortfolioData = {
 type Props = {
   portfolio?: PortfolioData;
   mode?: string;
-  onScan?: () => void;
   onSettings?: () => void;
   onHelp?: () => void;
 };
 
-export function Header({ portfolio, mode, onScan, onSettings, onHelp }: Props) {
+export function Header({ portfolio, mode, onSettings, onHelp }: Props) {
   const value = portfolio?.portfolio_value;
   const cash = portfolio?.cash;
   const pnl = portfolio?.daily_change ?? 0;

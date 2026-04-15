@@ -24,6 +24,7 @@ export function useSSE(url: string, onMessage: (eventType: string, payload: unkn
       "system",
       "voice_command",
       "price_update",
+      "market_pulse",
     ];
     eventTypes.forEach((eventType) => {
       source.addEventListener(eventType, (event) => handler(event as MessageEvent, eventType));

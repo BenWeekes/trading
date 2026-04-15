@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..adapters.fmp import FMPClient
 from ..services.market_poller import get_poll_stats, get_ticker_prices, poll_all
+from ..services.market_pulse import get_pulse_data
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_trade, insert_execution, list_executions, list_trades, update_trade
 from ..services.event_bus import event_bus
@@ -69,6 +70,12 @@ async def executions():
 async def poll_market_data():
     """Test FMP data polling — fetches all available data sources and returns summary."""
     return await poll_all()
+
+
+@router.get("/market-pulse")
+async def market_pulse():
+    """Live market pulse — gainers, losers, most active with direction colors."""
+    return get_pulse_data()
 
 
 @router.get("/ticker")

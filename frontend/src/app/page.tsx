@@ -10,6 +10,7 @@ import { AvatarAndPositions } from "@/components/trades/AvatarAndPositions";
 import { ToastContainer, toast } from "@/components/shared/Toast";
 import { SettingsPanel } from "@/components/shared/SettingsPanel";
 import { HelpPanel } from "@/components/shared/HelpPanel";
+import { MarketPulse } from "@/components/shared/MarketPulse";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
 import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
@@ -27,6 +28,7 @@ export default function Page() {
   const [scanning, setScanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [pulseOpen, setPulseOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"events" | "recs">("events");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const didInit = useRef(false);
@@ -119,6 +121,10 @@ export default function Page() {
         setHelpOpen(true);
       } else if (action === "close_help") {
         setHelpOpen(false);
+      } else if (action === "open_market_pulse") {
+        setPulseOpen(true);
+      } else if (action === "close_market_pulse") {
+        setPulseOpen(false);
       } else if (action === "filter_chat") {
         setChatRoleFilter(p.value === "all" ? null : (p.value as string));
       } else if (action === "mute" || action === "unmute") {
@@ -217,7 +223,7 @@ export default function Page() {
         daily_change: Number(portfolio.daily_change ?? 0),
         daily_change_pct: Number(portfolio.daily_change_pct ?? 0),
         open_positions: Number(portfolio.open_positions ?? 0),
-      }} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} />
+      }} mode={mode} onScan={scanning ? undefined : onScan} onSettings={() => setSettingsOpen(true)} onHelp={() => setHelpOpen(true)} onMarketPulse={() => setPulseOpen(true)} />
       {!hasContent ? (
         <EmptyState onScan={onScan} scanning={scanning} />
       ) : (
@@ -280,6 +286,7 @@ export default function Page() {
       )}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <MarketPulse open={pulseOpen} onClose={() => setPulseOpen(false)} />
       <ToastContainer />
     </main>
   );

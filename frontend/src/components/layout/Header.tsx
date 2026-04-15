@@ -13,9 +13,10 @@ type Props = {
   onScan?: () => void;
   onSettings?: () => void;
   onHelp?: () => void;
+  onMarketPulse?: () => void;
 };
 
-export function Header({ portfolio, mode, onScan, onSettings, onHelp }: Props) {
+export function Header({ portfolio, mode, onScan, onSettings, onHelp, onMarketPulse }: Props) {
   const value = portfolio?.portfolio_value;
   const cash = portfolio?.cash;
   const pnl = portfolio?.daily_change ?? 0;
@@ -47,6 +48,7 @@ export function Header({ portfolio, mode, onScan, onSettings, onHelp }: Props) {
 
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         {onScan && <button className="btn btn-accent" onClick={onScan}>Scan Earnings</button>}
+        {onMarketPulse && <button className="btn btn-accent" onClick={onMarketPulse}>Market Pulse</button>}
         {onSettings && <button className="btn" onClick={onSettings}>Settings</button>}
         {onHelp && <button className="btn" onClick={onHelp}>Help</button>}
 

@@ -195,7 +195,8 @@ TOOL_DEFINITIONS = [
                     "action": {
                         "type": "string",
                         "enum": ["show_events", "show_recommendations", "open_settings", "close_settings",
-                                 "open_help", "close_help", "filter_chat", "end_call", "mute", "unmute"],
+                                 "open_help", "close_help", "open_market_pulse", "close_market_pulse",
+                                 "filter_chat", "end_call", "mute", "unmute"],
                     },
                     "value": {"type": "string", "description": "For filter_chat: role name or 'all'."},
                 },
@@ -476,6 +477,8 @@ async def _exec_ui(args: dict) -> str:
         "open_help": "Opening help.",
         "close_help": "Help closed.",
         "filter_chat": f"Filtering chat to {value or 'all'}.",
+        "open_market_pulse": "Opening market pulse.",
+        "close_market_pulse": "Market pulse closed.",
         "end_call": "Ending call. Goodbye.",
         "mute": "Muted.",
         "unmute": "Unmuted.",

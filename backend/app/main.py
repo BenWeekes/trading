@@ -43,6 +43,13 @@ def seed_role_configs() -> None:
         )
 
 
+async def _market_pulse_loop():
+    """Background market pulse — fast polling gainers/losers/active."""
+    from .services.market_pulse import run_pulse
+    await asyncio.sleep(3)
+    await run_pulse()
+
+
 async def _market_poller_loop():
     """Background market data polling."""
     from .services.market_poller import run_poller
@@ -80,9 +87,11 @@ async def lifespan(app: FastAPI):
     seed_role_configs()
     exit_task = asyncio.create_task(_exit_check_loop())
     poller_task = asyncio.create_task(_market_poller_loop())
+    pulse_task = asyncio.create_task(_market_pulse_loop())
     yield
     exit_task.cancel()
     poller_task.cancel()
+    pulse_task.cancel()
 
 
 settings = get_settings()

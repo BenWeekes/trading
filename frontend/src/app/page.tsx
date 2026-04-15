@@ -172,36 +172,55 @@ export default function Page() {
                 }
               }}
               onSelectRecommendation={(rec) => { setSelectedNews(null); setActiveRec(rec); }}
-              onSelectNews={(ev) => { setSelectedNews(ev); }} />
+              onSelectNews={async (ev) => {
+                setSelectedNews(ev);
+                // Notify the trader about the selected news via a discuss message
+                if (activeRec && ev.headline) {
+                  try {
+                    await api.discuss(activeRec.id, `[System: User is reading news] ${ev.symbol ? ev.symbol + ": " : ""}${ev.headline}`);
+                    const d = await api.rec(activeRec.id);
+                    setTimeline(d.timeline);
+                  } catch { /* ignore */ }
+                }
+              }} />
           </div>
 
-          {/* CENTER: either News reader (full height) or Trade Panel + Chat */}
+          {/* CENTER: News or Trade Panel (top) + Avatar + Chat (bottom) */}
           <div className="column">
-            {selectedNews ? (
-              <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />
-            ) : (
-              <>
-                <div style={{ display: "flex", gap: 12, minHeight: 320, maxHeight: 400, flexShrink: 0 }}>
-                  <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-                    <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
-                      onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
-                      onApprove={onApprove}
-                      onApproveAndExecute={async (shares) => {
-                        if (!activeRec) return;
-                        try { await api.readyForApproval(activeRec.id).catch(() => {}); await api.approve(activeRec.id, shares); await api.execute(activeRec.id);
-                          toast(`Executed ${activeRec.direction} ${activeRec.symbol} — ${shares} sh`, "success"); await load();
-                        } catch (err) { toast("Failed: " + (err instanceof Error ? err.message : ""), "error"); }
-                      }}
-                      onExecute={onExecute} onReject={onReject} />
-                  </div>
-                  <InlineAvatar recommendation={activeRec} avatarStatus={avatarStatus}
-                    onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
-                    onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
-                </div>
-                <GroupChat messages={sortedTimeline} onSend={onSend} activeSymbol={activeRec?.symbol} companyName={companyName}
-                  roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
-              </>
-            )}
+            <div style={{ display: "flex", gap: 12, minHeight: 320, maxHeight: 400, flexShrink: 0 }}>
+              <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
+                {selectedNews ? (
+                  <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />
+                ) : (
+                  <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
+                    onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
+                    onApprove={onApprove}
+                    onApproveAndExecute={async (shares) => {
+                      if (!activeRec) return;
+                      try { await api.readyForApproval(activeRec.id).catch(() => {}); await api.approve(activeRec.id, shares); await api.execute(activeRec.id);
+                        toast(`Executed ${activeRec.direction} ${activeRec.symbol} — ${shares} sh`, "success"); await load();
+                      } catch (err) { toast("Failed: " + (err instanceof Error ? err.message : ""), "error"); }
+                    }}
+                    onExecute={onExecute} onReject={onReject} />
+                )}
+              </div>
+              <InlineAvatar recommendation={activeRec} avatarStatus={avatarStatus}
+                onStart={async () => { if (!activeRec) return null; const s = await api.traderAvatarStart(activeRec.id); setAvatarStatus(s); return s; }}
+                onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
+            </div>
+            <GroupChat
+              messages={selectedNews ? [] : sortedTimeline}
+              onSend={selectedNews ? async (msg) => {
+                // Send news context + user question to trader
+                const newsContext = `[News: ${selectedNews.headline}] ${msg}`;
+                if (activeRec) {
+                  try { await api.discuss(activeRec.id, newsContext); const d = await api.rec(activeRec.id); setTimeline(d.timeline); setSummary(d.summary); }
+                  catch { toast("Chat failed", "error"); }
+                }
+              } : onSend}
+              activeSymbol={selectedNews?.symbol ?? activeRec?.symbol}
+              companyName={selectedNews ? (companyNames[selectedNews.symbol ?? ""] || "") : companyName}
+              roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
           </div>
 
           {/* RIGHT: Market Lists */}

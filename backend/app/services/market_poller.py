@@ -24,23 +24,16 @@ from ..services.event_bus import event_bus
 
 _fmp = FMPClient()
 
-# Major US stocks for the live ticker
-TICKER_UNIVERSE = [
-    # Mega cap tech
-    "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "NFLX", "AMD",
-    # Large cap tech
-    "CRM", "PLTR", "INTC", "ORCL", "ADBE", "CSCO", "QCOM", "MU", "AMAT", "PANW",
-    # Finance
-    "JPM", "GS", "MS", "BAC", "WFC", "BLK", "C", "AXP",
-    # Healthcare
-    "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO",
-    # Consumer
-    "NKE", "SBUX", "MCD", "DIS", "HD", "WMT", "COST", "PG",
-    # Energy / Industrial
-    "XOM", "CVX", "BA", "CAT", "GE", "RTX",
-    # ETFs
-    "SPY", "QQQ", "IWM", "DIA",
-]
+def _get_watched_symbols() -> list[str]:
+    """Symbols we actually care about: positions + recommendations + SPY."""
+    symbols = {"SPY"}  # always track regime
+    for t in list_trades(open_only=True):
+        if t.get("symbol"):
+            symbols.add(t["symbol"])
+    for r in list_recommendations(limit=20):
+        if r.get("symbol") and r["status"] not in ("closed", "rejected", "cancelled"):
+            symbols.add(r["symbol"])
+    return list(symbols)
 
 # Track API call count for monitoring
 _call_count = 0
@@ -73,9 +66,14 @@ async def _safe_call(coro, label: str):
 
 
 async def poll_ticker_batch(batch: list[str]):
-    """Poll a batch of stocks for the live market ticker. ~5 stocks at a time."""
+    """Poll watched symbols. Updates prices + position P&L."""
+    positions = list_trades(open_only=True)
+    position_map = {}
+    for t in positions:
+        position_map.setdefault(t["symbol"], []).append(t)
+
     for symbol in batch:
-        quote = await _safe_call(_fmp.quote(symbol), f"ticker:{symbol}")
+        quote = await _safe_call(_fmp.quote(symbol), f"quote:{symbol}")
         if not quote or not quote.get("price"):
             continue
         price = float(quote["price"])
@@ -90,6 +88,14 @@ async def poll_ticker_batch(batch: list[str]):
             "volume": volume, "prev_close": prev,
             "day_high": quote.get("dayHigh"), "day_low": quote.get("dayLow"),
         }
+
+        # Update P&L on open positions
+        for t in position_map.get(symbol, []):
+            entry = float(t.get("entry_price") or price)
+            shares = float(t.get("shares") or 0)
+            direction = (t.get("direction") or "BUY").upper()
+            pnl = (price - entry) * shares if direction != "SHORT" else (entry - price) * shares
+            update_trade(t["id"], current_price=price, unrealized_pnl=round(pnl, 2))
 
         await event_bus.publish("price_update", {
             "symbol": symbol,
@@ -106,69 +112,6 @@ def get_ticker_prices() -> dict:
     return dict(_ticker_prices)
 
 
-async def poll_position_quotes():
-    """Every 15s — quotes for open positions. Updates P&L in DB + publishes SSE."""
-    positions = list_trades(open_only=True)
-    if not positions:
-        return
-
-    symbols = list({t["symbol"] for t in positions if t.get("symbol")})
-    for symbol in symbols:
-        quote = await _safe_call(_fmp.quote(symbol), f"quote:{symbol}")
-        if not quote or not quote.get("price"):
-            continue
-        price = float(quote["price"])
-
-        for t in positions:
-            if t["symbol"] != symbol:
-                continue
-            entry = float(t.get("entry_price") or price)
-            shares = float(t.get("shares") or 0)
-            direction = (t.get("direction") or "BUY").upper()
-            pnl = (price - entry) * shares if direction != "SHORT" else (entry - price) * shares
-
-            update_trade(t["id"], current_price=price, unrealized_pnl=round(pnl, 2))
-
-        await event_bus.publish("position_update", {
-            "symbol": symbol, "price": price,
-            "change_pct": round(quote.get("changesPercentage", 0), 2),
-        })
-
-
-async def poll_recommendation_quotes():
-    """Every 30s — quotes for symbols with active recommendations."""
-    recs = list_recommendations(limit=10)
-    active_symbols = list({r["symbol"] for r in recs if r.get("symbol") and r["status"] not in ("closed", "rejected", "cancelled")})
-
-    # Skip symbols already covered by position quotes
-    position_symbols = {t["symbol"] for t in list_trades(open_only=True)}
-    symbols = [s for s in active_symbols if s not in position_symbols]
-
-    for symbol in symbols[:5]:  # cap at 5
-        quote = await _safe_call(_fmp.quote(symbol), f"rec-quote:{symbol}")
-        if not quote or not quote.get("price"):
-            continue
-        await event_bus.publish("price_update", {
-            "symbol": symbol,
-            "price": float(quote["price"]),
-            "change_pct": round(quote.get("changesPercentage", 0), 2),
-            "volume": quote.get("volume"),
-            "day_high": quote.get("dayHigh"),
-            "day_low": quote.get("dayLow"),
-        })
-
-
-async def poll_spy():
-    """Every 60s — SPY quote for regime check."""
-    quote = await _safe_call(_fmp.quote("SPY"), "spy")
-    if not quote:
-        return
-    await event_bus.publish("price_update", {
-        "symbol": "SPY",
-        "price": float(quote.get("price", 0)),
-        "change_pct": round(quote.get("changesPercentage", 0), 2),
-        "ma200": quote.get("priceAvg200"),
-    })
 
 
 async def poll_stock_news():
@@ -263,9 +206,9 @@ async def poll_upcoming_earnings():
 
 async def poll_all() -> dict:
     """One-shot poll of all data sources. Used by /api/poll-market endpoint."""
-    await poll_position_quotes()
-    await poll_recommendation_quotes()
-    await poll_spy()
+    watched = _get_watched_symbols()
+    if watched:
+        await poll_ticker_batch(watched)
     await poll_stock_news()
     await poll_general_news()
     await poll_market_movers()
@@ -282,44 +225,33 @@ async def run_poller():
         print("[poller] FMP_API_KEY not set — poller disabled")
         return
 
-    print(f"[poller] starting market data poller — {len(TICKER_UNIVERSE)} stocks in universe")
+    print("[poller] starting market data poller — watching positions + recommendations + SPY")
     _call_count = 0
     _call_count_reset = time.time()
 
     tick = 0
-    batch_idx = 0
-    batch_size = 4  # 4 stocks per tick × tick every 2s = ~120 calls/min for ticker
 
     while True:
         try:
             cycle_start = time.time()
             tick += 1
 
-            # Every 2s — cycle through ticker universe (4 stocks at a time)
-            batch = TICKER_UNIVERSE[batch_idx:batch_idx + batch_size]
-            if batch:
-                await poll_ticker_batch(batch)
-            batch_idx = (batch_idx + batch_size) % len(TICKER_UNIVERSE)
+            # Every 15s — quote all watched symbols (positions + recs + SPY)
+            watched = _get_watched_symbols()
+            if watched:
+                await poll_ticker_batch(watched)
 
-            # Every 30s (tick 15) — position quotes for P&L
-            if tick % 15 == 0:
-                await poll_position_quotes()
-
-            # Every 60s (tick 30) — recommendation quotes
-            if tick % 30 == 0:
-                await poll_recommendation_quotes()
-
-            # Every 2 min (tick 60) — stock news
-            if tick % 60 == 0:
+            # Every 2 min (tick 8) — stock news
+            if tick % 8 == 0:
                 await poll_stock_news()
 
-            # Every 5 min (tick 150) — general news + movers
-            if tick % 150 == 0:
+            # Every 5 min (tick 20) — general news + market movers
+            if tick % 20 == 0:
                 await poll_general_news()
                 await poll_market_movers()
 
-            # Every 30 min (tick 900) — upcoming earnings
-            if tick % 900 == 0:
+            # Every 30 min (tick 120) — upcoming earnings
+            if tick % 120 == 0:
                 await poll_upcoming_earnings()
 
             elapsed = time.time() - cycle_start
@@ -335,7 +267,7 @@ async def run_poller():
                 "budget_pct": round(rate / 300 * 100, 1),
             }
 
-            if tick % 150 == 0:  # log every 5 min
+            if tick % 20 == 0:  # log every 5 min
                 print(f"[poller] tick={tick} calls={_call_count} rate={rate:.0f}/min ({rate/300*100:.1f}% budget)")
 
         except asyncio.CancelledError:
@@ -344,4 +276,4 @@ async def run_poller():
         except Exception as e:
             print(f"[poller] error: {e}")
 
-        await asyncio.sleep(2)  # base tick = 2 seconds
+        await asyncio.sleep(15)  # base tick = 15 seconds

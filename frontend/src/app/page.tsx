@@ -181,7 +181,7 @@ export default function Page() {
               <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />
             ) : (
               <>
-                <div style={{ display: "flex", gap: 12, height: 320, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 12, minHeight: 320, maxHeight: 400, flexShrink: 0 }}>
                   <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
                     <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
                       onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}

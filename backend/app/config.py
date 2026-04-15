@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Weekes AATF"
     app_mode: str = "paper"
-    event_mode: str = "mock"
+    event_mode: str = "live"
     demo_mode: bool = True
     backend_port: int = 8000
     frontend_port: int = 3000

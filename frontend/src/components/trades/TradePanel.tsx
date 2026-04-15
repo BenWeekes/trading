@@ -56,7 +56,7 @@ export function TradePanel({ recommendation, summary, companyName, onReady, onAp
   const hasSummary = summary?.bull_case || summary?.bear_case;
 
   return (
-    <div className="panel">
+    <div className="panel" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div className="panel-header" style={{ gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span data-tooltip={ACTION_TIPS[action]} style={{ color, fontWeight: 700, fontSize: 14 }}>{action}</span>
@@ -69,7 +69,7 @@ export function TradePanel({ recommendation, summary, companyName, onReady, onAp
         <StatusBadge status={rec.status} />
       </div>
 
-      <div className="panel-body" style={{ display: "grid", gap: 10 }}>
+      <div className="panel-body" style={{ display: "grid", gap: 10, flex: 1, overflowY: "auto" }}>
         {/* Bull / Bear / Disagreement — truncated with expand */}
         {hasSummary && (
           <div style={{ display: "grid", gap: 2, fontSize: 12, padding: "8px 10px", background: "var(--bg-panel-soft)", borderRadius: 8 }}>
@@ -93,30 +93,23 @@ export function TradePanel({ recommendation, summary, companyName, onReady, onAp
           <Level label="Stop" price={rec.stop_price} logic={rec.stop_logic} color="var(--sell)" />
         </div>
 
-        {/* Buy controls */}
-        {(canReady || canApprove) && action !== "PASS" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 4, borderTop: "1px solid var(--line)" }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Shares</span>
-            <input
-              type="number" value={shares} onChange={(e) => setShares(Number(e.target.value))} min={1}
-              style={{ width: 80, padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "center" }}
-            />
-            {rec.entry_price && (
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                ~${(shares * rec.entry_price).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        {/* Action row: shares + buttons on same line */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", paddingTop: 4, borderTop: "1px solid var(--line)" }}>
+          {(canReady || canApprove) && action !== "PASS" && (
+            <>
+              <input
+                type="number" value={shares} onChange={(e) => setShares(Number(e.target.value))} min={1}
+                style={{ width: 60, padding: "5px 8px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--text)", fontSize: 13, fontWeight: 600, textAlign: "center" }}
+              />
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {rec.entry_price ? `~$${(shares * rec.entry_price).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "sh"}
               </span>
-            )}
-          </div>
-        )}
-
-        {/* Action buttons */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {canReady && <button className="btn btn-accent" onClick={() => onApproveAndExecute(shares)}>Approve & Execute ({shares} sh)</button>}
-          {canReady && <button className="btn" onClick={onReady}>Ready (no execute)</button>}
-          {canApprove && <button className="btn btn-accent" onClick={() => { onApprove(shares); setTimeout(onExecute, 500); }}>Approve & Execute ({shares} sh)</button>}
-          {canApprove && <button className="btn" onClick={() => onApprove(shares)}>Approve Only</button>}
-          {canExecute && <button className="btn btn-warn" onClick={onExecute}>Execute Order</button>}
-          {canReject && <button className="btn btn-danger" onClick={onReject}>Reject</button>}
+            </>
+          )}
+          {canReady && <button className="btn btn-accent" style={{ fontSize: 11 }} onClick={() => onApproveAndExecute(shares)}>Approve & Execute</button>}
+          {canApprove && <button className="btn btn-accent" style={{ fontSize: 11 }} onClick={() => { onApprove(shares); setTimeout(onExecute, 500); }}>Approve & Execute</button>}
+          {canExecute && <button className="btn btn-warn" style={{ fontSize: 11 }} onClick={onExecute}>Execute</button>}
+          {canReject && <button className="btn btn-danger" style={{ fontSize: 11 }} onClick={onReject}>Reject</button>}
         </div>
       </div>
     </div>

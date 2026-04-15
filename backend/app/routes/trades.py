@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..adapters.fmp import FMPClient
+from ..services.market_poller import poll_all
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import get_trade, insert_execution, list_executions, list_trades, update_trade
 from ..services.event_bus import event_bus
@@ -62,6 +63,12 @@ async def trade_detail(trade_id: str):
 @router.get("/executions")
 async def executions():
     return {"executions": list_executions()}
+
+
+@router.post("/poll-market")
+async def poll_market_data():
+    """Test FMP data polling — fetches all available data sources and returns summary."""
+    return await poll_all()
 
 
 @router.post("/check-exits")

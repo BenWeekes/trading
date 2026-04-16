@@ -103,8 +103,9 @@ export default function Page() {
       else if (a === "reject") { toast(`Rejected ${p.symbol}`, "info"); void load(); }
       else if (a === "sell") { toast(`Sold ${p.symbol}`, "success"); void load(); }
       else if (a === "scan_complete") { toast(`Scan: ${p.count} candidates`, "success"); void load(); }
-      else if (a === "show_events") setActiveTab("earnings");
-      else if (a === "show_recommendations") setActiveTab("ai");
+      else if (a === "show_events" || a === "show_earnings") setActiveTab("earnings");
+      else if (a === "show_recommendations" || a === "show_ai") setActiveTab("ai");
+      else if (a === "show_news") setActiveTab("news");
       else if (a === "open_settings") setSettingsOpen(true);
       else if (a === "close_settings") setSettingsOpen(false);
       else if (a === "open_help") setHelpOpen(true);

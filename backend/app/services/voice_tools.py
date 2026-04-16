@@ -188,15 +188,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "ui_control",
-            "description": "Control the UI. Use for: show events, show recommendations, open/close settings, open/close help, filter chat, mute, end call.",
+            "description": "Control the UI. Use for: show earnings, show ai, show news (left tabs), open/close settings, open/close help, filter chat by role, mute, end call.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["show_events", "show_recommendations", "open_settings", "close_settings",
-                                 "open_help", "close_help", "open_market_pulse", "close_market_pulse",
-                                 "filter_chat", "end_call", "mute", "unmute"],
+                        "enum": ["show_earnings", "show_ai", "show_news", "open_settings", "close_settings",
+                                 "open_help", "close_help", "filter_chat", "end_call", "mute", "unmute"],
                     },
                     "value": {"type": "string", "description": "For filter_chat: role name or 'all'."},
                 },
@@ -470,15 +469,14 @@ async def _exec_ui(args: dict) -> str:
     value = args.get("value", "")
     await event_bus.publish("voice_command", {"action": action, "value": value})
     labels = {
-        "show_events": "Showing events tab.",
-        "show_recommendations": "Showing recommendations tab.",
+        "show_earnings": "Showing earnings tab.",
+        "show_ai": "Showing AI recommendations tab.",
+        "show_news": "Showing news tab.",
         "open_settings": "Opening settings.",
         "close_settings": "Settings closed.",
         "open_help": "Opening help.",
         "close_help": "Help closed.",
         "filter_chat": f"Filtering chat to {value or 'all'}.",
-        "open_market_pulse": "Opening market pulse.",
-        "close_market_pulse": "Market pulse closed.",
         "end_call": "Ending call. Goodbye.",
         "mute": "Muted.",
         "unmute": "Unmuted.",
@@ -513,9 +511,16 @@ def build_voice_context(session_id: str) -> str:
         "- Risk: challenges thesis, flags portfolio risk, recommends position sizing",
         "- Quant Pricing: sets entry zones, stop levels, target prices, volatility regime",
         "",
-        "STRATEGY: PEAD V2 — post-earnings announcement drift. EPS surprise >=10%, revenue beat required, top 2 candidates per scan, 10 trading day hold, conviction-based sizing.",
+        "STRATEGY: PEAD V2 — post-earnings announcement drift. Scans run automatically every 30 min. EPS surprise >=10%, revenue beat required, top 2 candidates per scan, 10 trading day hold, conviction-based sizing.",
         "",
-        "RULES: Keep responses under 40 words. Use tools for ALL actions. Confirm before trades. When asked about recommendations, use the list_recommendations tool.",
+        "APP LAYOUT the user sees:",
+        "- Left column has 3 tabs: Earnings (clickable, loads AI analysis), AI (recommendations to approve/reject), News (read-only headlines, clickable to read in centre)",
+        "- Centre: trade summary + avatar (you) at top, desk chat below. When user reads news, it replaces the summary and chat switches to news discussion.",
+        "- Right column: market lists with tabs — Open (positions), All (all tracked), Gainers, Losers, Active. Prices update live.",
+        "- Header: Settings, Help buttons. Portfolio/Cash/P&L display.",
+        "- Data flows in automatically — earnings scan, news, market movers. No manual scan button needed.",
+        "",
+        "RULES: Keep responses under 40 words. Use tools for ALL actions. Confirm before trades. When user asks about news, you may already have context from a system message. When asked about recommendations, use the list_recommendations tool.",
     ]
 
     # All recommendations

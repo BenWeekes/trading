@@ -150,25 +150,127 @@ def get_recommendation(rec_id: str) -> dict | None:
     return row
 
 
+def upsert_discussion_subject(record: dict) -> None:
+    with get_conn() as conn:
+        existing = conn.execute("SELECT id FROM discussion_subjects WHERE id = ?", (record["id"],)).fetchone()
+        if existing:
+            conn.execute(
+                """
+                UPDATE discussion_subjects
+                SET subject_type = ?, symbol = ?, event_id = ?, recommendation_id = ?, trade_id = ?,
+                    headline = ?, summary = ?, status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    record["subject_type"],
+                    record.get("symbol"),
+                    record.get("event_id"),
+                    record.get("recommendation_id"),
+                    record.get("trade_id"),
+                    record.get("headline"),
+                    record.get("summary"),
+                    record.get("status", "active"),
+                    record["updated_at"],
+                    record["id"],
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO discussion_subjects (
+                    id, subject_type, symbol, event_id, recommendation_id, trade_id,
+                    headline, summary, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record["id"],
+                    record["subject_type"],
+                    record.get("symbol"),
+                    record.get("event_id"),
+                    record.get("recommendation_id"),
+                    record.get("trade_id"),
+                    record.get("headline"),
+                    record.get("summary"),
+                    record.get("status", "active"),
+                    record["created_at"],
+                    record["updated_at"],
+                ),
+            )
+
+
+def get_discussion_subject(subject_id: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM discussion_subjects WHERE id = ?", (subject_id,)).fetchone()
+
+
+def find_discussion_subject(
+    *,
+    subject_type: str,
+    symbol: str | None = None,
+    event_id: str | None = None,
+    recommendation_id: str | None = None,
+    trade_id: str | None = None,
+) -> dict | None:
+    query = "SELECT * FROM discussion_subjects WHERE subject_type = ?"
+    params: list = [subject_type]
+    if event_id:
+        query += " AND event_id = ?"
+        params.append(event_id)
+    if recommendation_id:
+        query += " AND recommendation_id = ?"
+        params.append(recommendation_id)
+    if trade_id:
+        query += " AND trade_id = ?"
+        params.append(trade_id)
+    if symbol:
+        query += " AND symbol = ?"
+        params.append(symbol)
+    query += " ORDER BY updated_at DESC LIMIT 1"
+    with get_conn() as conn:
+        return conn.execute(query, params).fetchone()
+
+
+def list_discussion_subjects(limit: int = 50, subject_type: str | None = None) -> list[dict]:
+    query = "SELECT * FROM discussion_subjects"
+    params: list = []
+    if subject_type:
+        query += " WHERE subject_type = ?"
+        params.append(subject_type)
+    query += " ORDER BY updated_at DESC LIMIT ?"
+    params.append(limit)
+    with get_conn() as conn:
+        return conn.execute(query, params).fetchall()
+
+
 def create_role_thread(record: dict) -> None:
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT OR IGNORE INTO role_threads (id, role, symbol, recommendation_id, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO role_threads (id, role, symbol, recommendation_id, discussion_subject_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
                 record["role"],
                 record["symbol"],
                 record.get("recommendation_id"),
+                record.get("discussion_subject_id"),
                 record["created_at"],
             ),
         )
 
 
-def get_role_thread(role: str, recommendation_id: str) -> dict | None:
+def get_role_thread(role: str, recommendation_id: str | None = None, discussion_subject_id: str | None = None) -> dict | None:
     with get_conn() as conn:
+        if discussion_subject_id is not None:
+            return conn.execute(
+                """
+                SELECT * FROM role_threads
+                WHERE role = ? AND discussion_subject_id = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (role, discussion_subject_id),
+            ).fetchone()
         return conn.execute(
             """
             SELECT * FROM role_threads
@@ -179,7 +281,7 @@ def get_role_thread(role: str, recommendation_id: str) -> dict | None:
         ).fetchone()
 
 
-def list_role_threads(role: str | None = None, recommendation_id: str | None = None) -> list[dict]:
+def list_role_threads(role: str | None = None, recommendation_id: str | None = None, discussion_subject_id: str | None = None) -> list[dict]:
     query = "SELECT * FROM role_threads WHERE 1=1"
     params: list = []
     if role:
@@ -188,6 +290,9 @@ def list_role_threads(role: str | None = None, recommendation_id: str | None = N
     if recommendation_id:
         query += " AND recommendation_id = ?"
         params.append(recommendation_id)
+    if discussion_subject_id:
+        query += " AND discussion_subject_id = ?"
+        params.append(discussion_subject_id)
     query += " ORDER BY created_at DESC"
     with get_conn() as conn:
         return conn.execute(query, params).fetchall()
@@ -198,10 +303,10 @@ def insert_role_message(record: dict) -> None:
         conn.execute(
             """
             INSERT INTO role_messages (
-                id, role_thread_id, role, sender, symbol, recommendation_id,
+                id, role_thread_id, role, sender, symbol, recommendation_id, discussion_subject_id,
                 message_text, structured_payload, stance, confidence, provider,
                 model_used, input_tokens, output_tokens, cost_usd, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
@@ -210,6 +315,7 @@ def insert_role_message(record: dict) -> None:
                 record["sender"],
                 record.get("symbol"),
                 record.get("recommendation_id"),
+                record.get("discussion_subject_id"),
                 record["message_text"],
                 dump_json(record.get("structured_payload", {})),
                 record.get("stance"),
@@ -224,7 +330,12 @@ def insert_role_message(record: dict) -> None:
         )
 
 
-def list_role_messages(role: str | None = None, recommendation_id: str | None = None, thread_id: str | None = None) -> list[dict]:
+def list_role_messages(
+    role: str | None = None,
+    recommendation_id: str | None = None,
+    discussion_subject_id: str | None = None,
+    thread_id: str | None = None,
+) -> list[dict]:
     query = "SELECT * FROM role_messages WHERE 1=1"
     params: list = []
     if role:
@@ -233,6 +344,9 @@ def list_role_messages(role: str | None = None, recommendation_id: str | None = 
     if recommendation_id:
         query += " AND recommendation_id = ?"
         params.append(recommendation_id)
+    if discussion_subject_id:
+        query += " AND discussion_subject_id = ?"
+        params.append(discussion_subject_id)
     if thread_id:
         query += " AND role_thread_id = ?"
         params.append(thread_id)

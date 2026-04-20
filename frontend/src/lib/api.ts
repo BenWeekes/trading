@@ -1,4 +1,4 @@
-import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "./types";
+import { DiscussionSubject, EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
 
@@ -24,6 +24,17 @@ export const api = {
   recs: () => fetchJson<{ recommendations: Recommendation[] }>("/recs"),
   rec: (id: string) =>
     fetchJson<{ recommendation: Recommendation; summary: Summary; timeline: RoleMessage[] }>(`/recs/${id}`),
+  subjects: (subjectType?: string) =>
+    fetchJson<{ subjects: DiscussionSubject[] }>(`/subjects${subjectType ? `?subject_type=${encodeURIComponent(subjectType)}` : ""}`),
+  subject: (id: string) =>
+    fetchJson<{ subject: DiscussionSubject; recommendation?: Recommendation | null; event?: EventItem | null; trade?: unknown; summary?: Summary | null; timeline: RoleMessage[] }>(`/subjects/${id}`),
+  resolveSubject: (payload: { recommendation_id?: string; event_id?: string; trade_id?: string; linked_recommendation_id?: string }) =>
+    fetchJson<{ subject: DiscussionSubject; recommendation?: Recommendation | null; event?: EventItem | null; trade?: unknown; summary?: Summary | null; timeline: RoleMessage[] }>(
+      "/subjects/resolve",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  discussSubject: (id: string, message: string) =>
+    fetchJson<RoleMessage>(`/subjects/${id}/discuss`, { method: "POST", body: JSON.stringify({ message }) }),
   discuss: (id: string, message: string) =>
     fetchJson<RoleMessage>(`/recs/${id}/discuss`, { method: "POST", body: JSON.stringify({ message }) }),
   readyForApproval: (id: string) => fetchJson(`/recs/${id}/ready`, { method: "POST" }),

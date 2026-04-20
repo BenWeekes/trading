@@ -1,6 +1,15 @@
 "use client";
 
-export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+import { useEffect, useRef } from "react";
+
+export function HelpPanel({ open, onClose, scrollCommand }: { open: boolean; onClose: () => void; scrollCommand?: { direction: "up" | "down"; nonce: number } | null }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || !scrollCommand || !panelRef.current) return;
+    panelRef.current.scrollBy({ top: scrollCommand.direction === "down" ? 280 : -280, behavior: "smooth" });
+  }, [open, scrollCommand]);
+
   if (!open) return null;
 
   return (
@@ -9,7 +18,7 @@ export function HelpPanel({ open, onClose }: { open: boolean; onClose: () => voi
       background: "rgba(0,0,0,0.6)", display: "flex", justifyContent: "center", alignItems: "flex-start",
       paddingTop: 60, overflowY: "auto",
     }} onClick={onClose}>
-      <div style={{
+      <div ref={panelRef} style={{
         background: "var(--bg-panel)", border: "1px solid var(--line)", borderRadius: 16,
         width: 600, maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
       }} onClick={(e) => e.stopPropagation()}>

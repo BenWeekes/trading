@@ -9,10 +9,26 @@ export type EventItem = {
   importance: number;
 };
 
+export type DiscussionSubject = {
+  id: string;
+  subject_type: string;
+  symbol?: string | null;
+  event_id?: string | null;
+  recommendation_id?: string | null;
+  trade_id?: string | null;
+  headline?: string | null;
+  summary?: string | null;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type RoleMessage = {
   id: string;
   role: string;
   sender: string;
+  recommendation_id?: string | null;
+  discussion_subject_id?: string | null;
   message_text: string;
   structured_payload: Record<string, unknown>;
   provider?: string | null;

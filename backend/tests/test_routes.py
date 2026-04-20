@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.db.helpers import new_id, utcnow_iso
-from app.db.repositories import upsert_recommendation
+from app.db.repositories import insert_event, list_role_messages, upsert_recommendation
+from app.services.voice_tools import set_active_context
 
 
 client = TestClient(app)
@@ -116,3 +117,96 @@ def test_settings_patch():
     response = client.patch("/api/settings", json={"min_conviction_to_trade": "8"})
     assert response.status_code == 200
     assert response.json()["updated"]["min_conviction_to_trade"] == "8"
+
+
+def test_agora_chat_persists_voice_user_and_trader_messages(monkeypatch):
+    recommendation = seed_recommendation("MSFT", status="awaiting_user_feedback", direction="BUY")
+    session_id = "voice-test-session"
+    set_active_context(session_id, recommendation["id"])
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"output_text": "I still like MSFT here. Buy the suggested size.", "output": []}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr("app.routes.agora.httpx.AsyncClient", FakeAsyncClient)
+
+    response = client.post(
+        "/api/agora/chat/completions",
+        json={
+            "channel": session_id,
+            "messages": [
+                {"role": "user", "content": "What do you think about MSFT after this move?"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    timeline = list_role_messages(recommendation_id=recommendation["id"])
+    assert any(
+        msg["sender"] == "user"
+        and msg["role"] == "trader"
+        and msg["structured_payload"].get("type") == "voice_user_message"
+        and msg.get("discussion_subject_id")
+        and "MSFT after this move" in msg["message_text"]
+        for msg in timeline
+    )
+    assert any(
+        msg["sender"] == "role:trader"
+        and msg["role"] == "trader"
+        and msg["structured_payload"].get("type") == "voice_response"
+        and msg.get("discussion_subject_id")
+        and "I still like MSFT here" in msg["message_text"]
+        for msg in timeline
+    )
+
+
+def test_subject_resolve_for_recommendation():
+    recommendation = seed_recommendation("NFLX", status="awaiting_user_feedback", direction="BUY")
+    response = client.post("/api/subjects/resolve", json={"recommendation_id": recommendation["id"]})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["subject"]["subject_type"] == "recommendation"
+    assert payload["subject"]["recommendation_id"] == recommendation["id"]
+    assert payload["recommendation"]["id"] == recommendation["id"]
+
+
+def test_subject_resolve_for_event_with_linked_recommendation():
+    recommendation = seed_recommendation("AMD", status="awaiting_user_feedback", direction="BUY")
+    event = {
+        "id": new_id("evt"),
+        "type": "news",
+        "symbol": "AMD",
+        "headline": "AMD rises on new product cycle",
+        "body_excerpt": "Event for subject resolution test.",
+        "source": "Unit Test",
+        "importance": 3,
+        "linked_recommendation_ids": [recommendation["id"]],
+        "timestamp": utcnow_iso(),
+    }
+    insert_event(event)
+    response = client.post(
+        "/api/subjects/resolve",
+        json={"event_id": event["id"], "linked_recommendation_id": recommendation["id"]},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["subject"]["subject_type"] == "news"
+    assert payload["subject"]["event_id"] == event["id"]
+    assert payload["subject"]["recommendation_id"] == recommendation["id"]
+    assert payload["event"]["id"] == event["id"]

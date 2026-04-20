@@ -9,6 +9,7 @@ from ..db.repositories import (
     get_all_strategy_settings,
     get_recommendation,
     get_summary,
+    list_events,
     list_recommendations,
     list_trades,
     set_strategy_setting,
@@ -20,6 +21,7 @@ from ..services.portfolio import get_portfolio_summary, get_positions
 
 _pending_actions: dict[str, dict] = {}
 _CONFIRM_TTL = 30
+_last_list_context: dict[str, dict] = {}
 
 
 def _set_pending(session_id: str, action: dict) -> None:
@@ -42,6 +44,40 @@ def _pop_pending(session_id: str) -> dict | None:
     if p:
         _pending_actions.pop(session_id, None)
     return p
+
+
+def has_pending_action(session_id: str) -> bool:
+    return _get_pending(session_id) is not None
+
+
+def _set_last_list(session_id: str, kind: str, items: list[dict]) -> None:
+    _last_list_context[session_id] = {
+        "kind": kind,
+        "items": items,
+        "created_at": time.time(),
+    }
+
+
+def _get_last_list(session_id: str) -> dict | None:
+    value = _last_list_context.get(session_id)
+    if not value:
+        return None
+    if time.time() - value.get("created_at", 0) > 120:
+        _last_list_context.pop(session_id, None)
+        return None
+    return value
+
+
+def _dedupe_recommendations_by_symbol(items: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in items:
+        symbol = item.get("symbol")
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        out.append(item)
+    return out
 
 
 # ── Active context tracking ──
@@ -178,6 +214,37 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "list_inbox_items",
+            "description": "List the items available in a UI list. Use when user asks what is in earnings, AI recommendations, news, or positions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tab": {"type": "string", "enum": ["earnings", "ai", "news", "positions"]},
+                    "limit": {"type": "number"},
+                },
+                "required": ["tab"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_role",
+            "description": "Ask Research, Risk, or Quant Pricing a question about the current recommendation. Use when the user asks you to ask another role.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string", "enum": ["research", "risk", "quant_pricing"]},
+                    "question": {"type": "string"},
+                    "recommendation_id": {"type": "string", "description": "Optional; defaults to active recommendation."},
+                },
+                "required": ["role", "question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "scan_earnings",
             "description": "Run an earnings scan. Use when user says scan, find opportunities, what's new.",
             "parameters": {"type": "object", "properties": {}},
@@ -195,7 +262,7 @@ TOOL_DEFINITIONS = [
                     "action": {
                         "type": "string",
                         "enum": ["show_earnings", "show_ai", "show_news", "open_settings", "close_settings",
-                                 "open_help", "close_help", "filter_chat", "end_call", "mute", "unmute"],
+                                 "open_help", "close_help", "filter_chat", "end_call", "mute", "unmute", "scroll_down", "scroll_up"],
                     },
                     "value": {"type": "string", "description": "For filter_chat: role name or 'all'."},
                 },
@@ -243,7 +310,11 @@ async def execute_tool(name: str, args: dict, session_id: str) -> str:
         elif name == "get_recommendation_detail":
             return _exec_rec_detail(args)
         elif name == "list_recommendations":
-            return _exec_list_recs()
+            return _exec_list_recs(session_id)
+        elif name == "list_inbox_items":
+            return _exec_list_inbox_items(args, session_id)
+        elif name == "ask_role":
+            return await _exec_ask_role(args, session_id)
         elif name == "scan_earnings":
             return await _exec_scan()
         elif name == "ui_control":
@@ -260,13 +331,25 @@ async def _exec_navigate(args: dict, session_id: str) -> str:
     symbol = args.get("symbol", "").upper()
     recs = list_recommendations(limit=50)
     rec = next((r for r in recs if r["symbol"] == symbol), None)
-    if not rec:
-        return f"No recommendation found for {symbol}."
-    set_active_context(session_id, rec["id"])
-    await event_bus.publish("voice_command", {"action": "navigate", "symbol": symbol, "recommendation_id": rec["id"]})
-    direction = rec.get("direction") or "under review"
-    conviction = rec.get("conviction") or "pending"
-    return f"Switched to {symbol}. {direction}, conviction {conviction}/10. Status: {rec['status'].replace('_',' ')}."
+    if rec:
+        set_active_context(session_id, rec["id"])
+        await event_bus.publish("voice_command", {"action": "navigate", "symbol": symbol, "recommendation_id": rec["id"]})
+        direction = rec.get("direction") or "under review"
+        conviction = rec.get("conviction") or "pending"
+        return f"Switched to {symbol}. {direction}, conviction {conviction}/10. Status: {rec['status'].replace('_',' ')}."
+
+    events = list_events(limit=100)
+    news = next((e for e in events if e.get("symbol") == symbol and e.get("type") not in {"earnings", "price_alert"}), None)
+    if news:
+        await event_bus.publish("voice_command", {"action": "open_event", "event_id": news["id"], "tab": "news", "symbol": symbol})
+        return f"Opened the latest news item for {symbol}: {news.get('headline','')[:120]}"
+
+    earnings = next((e for e in events if e.get("symbol") == symbol and e.get("type") == "earnings"), None)
+    if earnings:
+        await event_bus.publish("voice_command", {"action": "open_event", "event_id": earnings["id"], "tab": "earnings", "symbol": symbol})
+        return f"Opened the latest earnings event for {symbol}: {earnings.get('headline','')[:120]}"
+
+    return f"No recommendation, news, or earnings item found for {symbol}."
 
 
 async def _exec_approve_execute(args: dict, session_id: str) -> str:
@@ -367,7 +450,7 @@ async def _exec_sell(args: dict, session_id: str) -> str:
 
 
 async def _exec_confirm(session_id: str) -> str:
-    pending = _pop_pending(session_id)
+    pending = _get_pending(session_id)
     if not pending:
         return "Nothing pending to confirm. It may have timed out."
 
@@ -375,6 +458,9 @@ async def _exec_confirm(session_id: str) -> str:
 
     if pending["action"] == "approve_and_execute":
         rec_id = pending["recommendation_id"]
+        ctx_err = _validate_active_context(session_id, rec_id)
+        if ctx_err:
+            return ctx_err
         shares = pending["shares"]
         async with httpx.AsyncClient(timeout=30) as c:
             # Ready → Approve → Execute
@@ -385,6 +471,7 @@ async def _exec_confirm(session_id: str) -> str:
             r = await c.post(f"http://localhost:8000/api/recs/{rec_id}/execute")
             if r.status_code != 200:
                 return f"Execute failed: {r.json().get('detail', r.text[:80])}"
+        _pop_pending(session_id)
         await event_bus.publish("voice_command", {"action": "execute", "recommendation_id": rec_id, "symbol": pending["symbol"]})
         return f"Done. Executed {pending['symbol']}, {shares:.0f} shares at ${pending['entry_price']:.2f}."
 
@@ -394,6 +481,7 @@ async def _exec_confirm(session_id: str) -> str:
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.post(f"http://localhost:8000/api/trades/{trade_id}/sell", json={"shares": shares})
         if r.status_code == 200:
+            _pop_pending(session_id)
             result = r.json()
             pnl = result.get("pnl", 0)
             await event_bus.publish("voice_command", {"action": "sell", "trade_id": trade_id, "symbol": pending["symbol"]})
@@ -439,17 +527,82 @@ def _exec_rec_detail(args: dict) -> str:
     return " ".join(parts)
 
 
-def _exec_list_recs() -> str:
-    recs = list_recommendations(limit=20)
+def _exec_list_recs(session_id: str) -> str:
+    recs = _dedupe_recommendations_by_symbol(list_recommendations(limit=20))
     if not recs:
         return "No recommendations. Say 'scan' to find earnings opportunities."
     lines = []
+    last_items: list[dict] = []
     for r in recs:
         direction = r.get("direction") or "pending"
         conviction = r.get("conviction") or "?"
         status = r["status"].replace("_", " ")
         lines.append(f"{r['symbol']}: {direction}, conviction {conviction}/10, {status}")
+        last_items.append({"type": "recommendation", "symbol": r["symbol"], "recommendation_id": r["id"]})
+    _set_last_list(session_id, "ai", last_items[:5])
     return f"{len(recs)} recommendation{'s' if len(recs)!=1 else ''}: " + ". ".join(lines[:5])
+
+
+def _exec_list_inbox_items(args: dict, session_id: str) -> str:
+    tab = args.get("tab", "")
+    try:
+        limit = max(1, min(int(args.get("limit") or 5), 10))
+    except Exception:
+        limit = 5
+
+    if tab == "ai":
+        return _exec_list_recs(session_id)
+    if tab == "positions":
+        positions = get_positions()
+        if not positions:
+            return "No open positions."
+        lines = []
+        last_items: list[dict] = []
+        for p in positions[:limit]:
+            lines.append(f"{p['symbol']} {p.get('direction','')} {float(p.get('shares') or 0):.0f} shares, P&L ${float(p.get('unrealized_pnl') or 0):+.0f}")
+            last_items.append({"type": "position", "symbol": p["symbol"], "trade_id": p["id"]})
+        _set_last_list(session_id, "positions", last_items)
+        return f"{len(positions)} position{'s' if len(positions)!=1 else ''}: " + ". ".join(lines)
+
+    events = list_events(limit=100)
+    if tab == "earnings":
+        rows = [e for e in events if e.get("type") == "earnings"][:limit]
+    elif tab == "news":
+        rows = [e for e in events if e.get("type") not in {"earnings", "price_alert"}][:limit]
+    else:
+        rows = []
+    if not rows:
+        return f"No {tab} items right now."
+    parts = []
+    last_items: list[dict] = []
+    for e in rows:
+        label = e.get("symbol") or e.get("type") or "item"
+        parts.append(f"{label}: {e.get('headline','')[:90]}")
+        last_items.append({"type": tab[:-1] if tab.endswith("s") else tab, "symbol": e.get("symbol"), "event_id": e["id"]})
+    _set_last_list(session_id, tab, last_items)
+    return f"{len(rows)} {tab} item{'s' if len(rows)!=1 else ''}: " + ". ".join(parts)
+
+
+async def _exec_ask_role(args: dict, session_id: str) -> str:
+    rec_id = args.get("recommendation_id") or get_active_rec_id(session_id)
+    role = args.get("role")
+    question = (args.get("question") or "").strip()
+    if not rec_id:
+        return "No active recommendation. Navigate to a stock first."
+    if not role or not question:
+        return "Role and question are required."
+    ctx_err = _validate_active_context(session_id, rec_id)
+    if ctx_err:
+        return ctx_err
+    import httpx
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(f"http://localhost:8000/api/recs/{rec_id}/discuss", json={"message": f"@{role} {question}"})
+    if r.status_code != 200:
+        return f"Couldn't ask {role}: {r.text[:100]}"
+    data = r.json()
+    answer = (data.get("message_text") or "").strip()
+    symbol = (get_recommendation(rec_id) or {}).get("symbol", "")
+    return f"{role.replace('_',' ').title()} on {symbol}: {answer[:220]}"
 
 
 async def _exec_scan() -> str:
@@ -476,6 +629,8 @@ async def _exec_ui(args: dict) -> str:
         "close_settings": "Settings closed.",
         "open_help": "Opening help.",
         "close_help": "Help closed.",
+        "scroll_down": "Scrolling down.",
+        "scroll_up": "Scrolling up.",
         "filter_chat": f"Filtering chat to {value or 'all'}.",
         "end_call": "Ending call. Goodbye.",
         "mute": "Muted.",
@@ -520,7 +675,7 @@ def build_voice_context(session_id: str) -> str:
         "- Header: Settings, Help buttons. Portfolio/Cash/P&L display.",
         "- Data flows in automatically — earnings scan, news, market movers. No manual scan button needed.",
         "",
-        "RULES: Keep responses under 40 words. Use tools for ALL actions. Confirm before trades. When user asks about news, you may already have context from a system message. When asked about recommendations, use the list_recommendations tool.",
+        "RULES: Keep responses under 40 words. Use tools for ALL actions. Confirm before trades. When user asks about news, you may already have context from a system message. When asked about recommendations, use the list_recommendations tool. When user asks what is visible in a tab, use list_inbox_items. When user asks you to ask Quant, Risk, or Research something, use ask_role.",
     ]
 
     # All recommendations
@@ -558,6 +713,54 @@ def build_voice_context(session_id: str) -> str:
 
     pending = _get_pending(session_id)
     if pending:
-        parts.append(f"\nPENDING CONFIRMATION: {pending['action']} {pending.get('symbol','')} {pending.get('shares',0):.0f} shares. Waiting for user to say confirm or cancel.")
+        parts.append(
+            f"\nPENDING CONFIRMATION: {pending['action']} {pending.get('symbol','')} {pending.get('shares',0):.0f} shares. "
+            "If the user says confirm/yes/go ahead/do it/proceed, call confirm_action immediately. "
+            "Do not call approve_and_execute again while an action is pending. "
+            "If the user says cancel/no/stop, call cancel_action."
+        )
 
     return "\n".join(parts)
+
+
+async def maybe_handle_direct_pending_intent(session_id: str, text: str) -> str | None:
+    if not has_pending_action(session_id):
+        return None
+    lower = (text or "").strip().lower()
+    confirm_words = {
+        "confirm", "yes", "yes please", "yeah", "yep", "go ahead", "do it", "proceed",
+        "execute it", "buy it", "sell it", "ok", "okay",
+    }
+    cancel_words = {"cancel", "no", "no thanks", "stop", "wait", "never mind", "don't"}
+    if lower in confirm_words:
+        return await _exec_confirm(session_id)
+    if lower in cancel_words:
+        return await _exec_cancel(session_id)
+    return None
+
+
+async def maybe_handle_direct_open_intent(session_id: str, text: str) -> str | None:
+    lower = (text or "").strip().lower()
+    open_words = {
+        "look at it", "can we look at it", "discuss it", "can we discuss it",
+        "open it", "select it", "show it", "let's discuss it", "lets discuss it",
+        "the first one", "open the first one", "show the first one",
+    }
+    if lower not in open_words:
+        return None
+    ctx = _get_last_list(session_id)
+    if not ctx:
+        return None
+    items = ctx.get("items") or []
+    if not items:
+        return None
+    first = items[0]
+    if first.get("recommendation_id"):
+        return await _exec_navigate({"symbol": first.get("symbol", "")}, session_id)
+    if first.get("event_id"):
+        symbol = first.get("symbol") or ""
+        await event_bus.publish("voice_command", {"action": "open_event", "event_id": first["event_id"], "tab": "news" if ctx.get("kind") == "news" else "earnings", "symbol": symbol})
+        return f"Opened {symbol or 'that item'}."
+    if first.get("trade_id"):
+        return f"I can discuss {first.get('symbol','that position')}. Ask me whether to sell or hold it."
+    return None

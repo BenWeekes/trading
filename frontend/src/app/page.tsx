@@ -14,7 +14,16 @@ import { HelpPanel } from "@/components/shared/HelpPanel";
 import { NewsReader } from "@/components/shared/NewsReader";
 import { useSSE } from "@/hooks/useSSE";
 import { api, streamUrl } from "@/lib/api";
-import { EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
+import { DiscussionSubject, EventItem, Position, Recommendation, RoleMessage, Summary, TraderAvatarStatus } from "@/lib/types";
+
+type ActiveSubjectPayload = {
+  subject: DiscussionSubject;
+  recommendation?: Recommendation | null;
+  event?: EventItem | null;
+  trade?: unknown;
+  summary?: Summary | null;
+  timeline: RoleMessage[];
+};
 
 export default function Page() {
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -29,13 +38,24 @@ export default function Page() {
   const [scanning, setScanning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [helpScrollCommand, setHelpScrollCommand] = useState<{ direction: "up" | "down"; nonce: number } | null>(null);
+  const [inboxScrollCommand, setInboxScrollCommand] = useState<{ direction: "up" | "down"; nonce: number } | null>(null);
   const [activeTab, setActiveTab] = useState<"earnings" | "ai" | "news">("earnings");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
-  const [selectedNews, setSelectedNews] = useState<EventItem | null>(null);
+  const [activeSubject, setActiveSubject] = useState<ActiveSubjectPayload | null>(null);
   const didInit = useRef(false);
   const didScan = useRef(false);
+
+  const applySubjectData = useCallback((data: ActiveSubjectPayload) => {
+    setActiveSubject(data);
+    if (data.recommendation) {
+      setActiveRec(data.recommendation);
+    }
+    setSummary(data.summary ?? null);
+    setTimeline(data.timeline);
+  }, []);
 
   const load = useCallback(async () => {
     const [ev, rec, pos, port] = await Promise.all([api.events(), api.recs(), api.positions(), api.portfolio()]);
@@ -82,23 +102,43 @@ export default function Page() {
   }, [load]);
 
   const activeRecId = activeRec?.id;
+  const loadSubjectByRecommendation = useCallback(async (recommendationId: string) => {
+    const data = await api.resolveSubject({ recommendation_id: recommendationId });
+    applySubjectData(data);
+    return data;
+  }, [applySubjectData]);
+  const loadSubjectByEvent = useCallback(async (eventId: string, linkedRecommendationId?: string) => {
+    const data = await api.resolveSubject({ event_id: eventId, linked_recommendation_id: linkedRecommendationId });
+    applySubjectData(data);
+    return data;
+  }, [applySubjectData]);
+  const refreshActiveSubject = useCallback(async () => {
+    if (!activeSubject?.subject?.id) return;
+    const data = await api.subject(activeSubject.subject.id);
+    applySubjectData(data);
+  }, [activeSubject?.subject?.id, applySubjectData]);
   useEffect(() => {
     if (!activeRecId) return;
-    api.rec(activeRecId).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
+    if (!activeSubject) {
+      loadSubjectByRecommendation(activeRecId).catch(console.error);
+    }
+  }, [activeRecId, activeSubject, loadSubjectByRecommendation]);
+  useEffect(() => {
+    if (!activeRecId) return;
     api.traderAvatarStatus(activeRecId).then(setAvatarStatus).catch(console.error);
     if (activeRec?.symbol) api.companyName(activeRec.symbol).then((d) => setCompanyName(d.name)).catch(() => {});
-  }, [activeRecId]);
+  }, [activeRecId, activeRec?.symbol]);
 
   useSSE(streamUrl, useCallback((type: string, payload: unknown) => {
     const p = (typeof payload === "object" && payload) ? payload as Record<string, unknown> : {};
     if (type === "recommendation_update" || type === "role_message" || type === "role_query" || type === "summary_update") {
-      if (p.recommendation_id === activeRecId && activeRecId) api.rec(activeRecId).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error);
+      if (activeSubject?.subject?.id && (p.recommendation_id === activeRecId || p.discussion_subject_id === activeSubject.subject.id)) refreshActiveSubject().catch(console.error);
       api.recs().then((d) => setRecommendations(d.recommendations)).catch(console.error);
     } else if (type === "position_update") { api.positions().then((d) => setPositions(d.positions)).catch(console.error); }
     else if (type === "market_event") { api.events().then((d) => setEvents(d.events)).catch(console.error); }
     else if (type === "voice_command") {
       const a = p.action as string;
-      if (a === "navigate" && p.recommendation_id) { api.rec(p.recommendation_id as string).then((d) => { setActiveRec(d.recommendation); setSummary(d.summary); setTimeline(d.timeline); }).catch(console.error); toast(`Switching to ${p.symbol}`, "info"); }
+      if (a === "navigate" && p.recommendation_id) { loadSubjectByRecommendation(p.recommendation_id as string).catch(console.error); toast(`Switching to ${p.symbol}`, "info"); }
       else if (a === "approve" || a === "execute") { toast(`Executed ${p.symbol}`, "success"); void load(); }
       else if (a === "reject") { toast(`Rejected ${p.symbol}`, "info"); void load(); }
       else if (a === "sell") { toast(`Sold ${p.symbol}`, "success"); void load(); }
@@ -110,9 +150,24 @@ export default function Page() {
       else if (a === "close_settings") setSettingsOpen(false);
       else if (a === "open_help") setHelpOpen(true);
       else if (a === "close_help") setHelpOpen(false);
+      else if (a === "scroll_down") {
+        if (helpOpen) setHelpScrollCommand({ direction: "down", nonce: Date.now() });
+        else setInboxScrollCommand({ direction: "down", nonce: Date.now() });
+      }
+      else if (a === "scroll_up") {
+        if (helpOpen) setHelpScrollCommand({ direction: "up", nonce: Date.now() });
+        else setInboxScrollCommand({ direction: "up", nonce: Date.now() });
+      }
       else if (a === "filter_chat") setChatRoleFilter(p.value === "all" ? null : (p.value as string));
+      else if (a === "open_event" && p.event_id) {
+        const eventId = p.event_id as string;
+        const tab = (p.tab as "earnings" | "news" | undefined) ?? "news";
+        setActiveTab(tab === "earnings" ? "earnings" : "news");
+        loadSubjectByEvent(eventId).catch(console.error);
+        if (p.symbol) toast(`Opened ${p.symbol}`, "info");
+      }
     } else if (type === "system" && p.type === "analysis_error") { toast(`Analysis failed: ${p.symbol}`, "error"); }
-  }, [activeRecId]));
+  }, [activeRecId, activeSubject?.subject?.id, helpOpen, loadSubjectByEvent, loadSubjectByRecommendation, refreshActiveSubject]));
 
   const sortedTimeline = useMemo(() => [...timeline].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), [timeline]);
   const hasContent = events.length > 0 || recommendations.length > 0;
@@ -123,8 +178,8 @@ export default function Page() {
     catch (err) { toast("Scan failed", "error"); } finally { setScanning(false); }
   }
   async function onSend(msg: string) {
-    if (!activeRec) return;
-    try { await api.discuss(activeRec.id, msg); const d = await api.rec(activeRec.id); setActiveRec(d.recommendation); setTimeline(d.timeline); setSummary(d.summary); }
+    if (!activeSubject?.subject?.id) return;
+    try { await api.discussSubject(activeSubject.subject.id, msg); await refreshActiveSubject(); }
     catch { toast("Chat failed", "error"); }
   }
   async function onApprove(shares: number) {
@@ -157,30 +212,32 @@ export default function Page() {
           <div className="column">
             <InboxTabs events={events} recommendations={recommendations} companyNames={companyNames} activeSymbol={activeRec?.symbol}
               activeTab={activeTab} onTabChange={setActiveTab}
+              scrollCommand={inboxScrollCommand}
               onSelectEvent={async (ev) => {
-                setSelectedNews(null);
                 const rec = recommendations.find((r) => r.symbol === ev.symbol);
-                if (rec) { setActiveRec(rec); return; }
-                // No rec for this symbol — trigger analysis via discuss endpoint
+                if (rec) { await loadSubjectByRecommendation(rec.id); return; }
+                // No rec for this symbol — trigger a scan and re-read recommendations.
                 if (ev.symbol) {
                   toast(`Analysing ${ev.symbol}...`, "info");
                   try {
-                    await api.scan(); // triggers background analysis
-                    await load();
-                    const newRec = recommendations.find((r) => r.symbol === ev.symbol);
-                    if (newRec) setActiveRec(newRec);
+                    await api.scan();
+                    const fresh = await api.recs();
+                    setRecommendations(fresh.recommendations);
+                    const newRec = fresh.recommendations.find((r) => r.symbol === ev.symbol);
+                    if (newRec) await loadSubjectByRecommendation(newRec.id);
+                    else await loadSubjectByEvent(ev.id);
                   } catch { /* ignore */ }
                 }
               }}
-              onSelectRecommendation={(rec) => { setSelectedNews(null); setActiveRec(rec); }}
+              onSelectRecommendation={(rec) => { void loadSubjectByRecommendation(rec.id); }}
               onSelectNews={async (ev) => {
-                setSelectedNews(ev);
-                // Notify the trader about the selected news via a discuss message
-                if (activeRec && ev.headline) {
+                const matchingRec = ev.symbol ? recommendations.find((r) => r.symbol === ev.symbol) ?? null : null;
+                const subjectData = await loadSubjectByEvent(ev.id, matchingRec?.id);
+                if (subjectData?.subject?.id && ev.headline) {
                   try {
-                    await api.discuss(activeRec.id, `[System: User is reading news] ${ev.symbol ? ev.symbol + ": " : ""}${ev.headline}`);
-                    const d = await api.rec(activeRec.id);
-                    setTimeline(d.timeline);
+                    await api.discussSubject(subjectData.subject.id, `[System: User is reading news] ${ev.symbol ? ev.symbol + ": " : ""}${ev.headline}`);
+                    const refreshed = await api.subject(subjectData.subject.id);
+                    applySubjectData(refreshed);
                   } catch { /* ignore */ }
                 }
               }} />
@@ -190,10 +247,10 @@ export default function Page() {
           <div className="column">
             <div style={{ display: "flex", gap: 12, minHeight: 320, maxHeight: 400, flexShrink: 0 }}>
               <div style={{ flex: 1, minWidth: 0, overflow: "auto" }}>
-                {selectedNews ? (
-                  <NewsReader event={selectedNews} onClose={() => setSelectedNews(null)} />
+                {activeSubject?.subject?.subject_type === "news" ? (
+                  <NewsReader event={activeSubject.event ?? null} onClose={() => { if (activeRec?.id) { void loadSubjectByRecommendation(activeRec.id); } else { setActiveSubject(null); } }} />
                 ) : (
-                  <TradePanel recommendation={activeRec} summary={summary} companyName={companyName}
+                  <TradePanel recommendation={activeSubject?.recommendation ?? activeRec} summary={activeSubject?.summary ?? summary} companyName={companyName}
                     onReady={async () => { if (activeRec) { await api.readyForApproval(activeRec.id); await load(); } }}
                     onApprove={onApprove}
                     onApproveAndExecute={async (shares) => {
@@ -210,30 +267,23 @@ export default function Page() {
                 onStop={async () => { if (!activeRec) return; await api.traderAvatarStop(activeRec.id); setAvatarStatus(await api.traderAvatarStatus(activeRec.id)); }} />
             </div>
             <GroupChat
-              messages={selectedNews ? [] : sortedTimeline}
-              onSend={selectedNews ? async (msg) => {
-                // Send news context + user question to trader
-                const newsContext = `[News: ${selectedNews.headline}] ${msg}`;
-                if (activeRec) {
-                  try { await api.discuss(activeRec.id, newsContext); const d = await api.rec(activeRec.id); setTimeline(d.timeline); setSummary(d.summary); }
-                  catch { toast("Chat failed", "error"); }
-                }
-              } : onSend}
-              activeSymbol={selectedNews?.symbol ?? activeRec?.symbol}
-              companyName={selectedNews ? (companyNames[selectedNews.symbol ?? ""] || "") : companyName}
+              messages={sortedTimeline}
+              onSend={onSend}
+              activeSymbol={activeSubject?.subject?.symbol ?? activeRec?.symbol}
+              companyName={activeSubject?.event?.symbol ? (companyNames[activeSubject.event.symbol ?? ""] || "") : companyName}
               roleFilter={chatRoleFilter} onRoleFilterChange={setChatRoleFilter} />
           </div>
 
           {/* RIGHT: Market Lists */}
           <div className="column">
             <MarketLists positions={positions} activeSymbol={activeRec?.symbol} onSell={onSell}
-              onSelectSymbol={(sym) => { const rec = recommendations.find((r) => r.symbol === sym); if (rec) setActiveRec(rec); }} />
+              onSelectSymbol={(sym) => { const rec = recommendations.find((r) => r.symbol === sym); if (rec) void loadSubjectByRecommendation(rec.id); }} />
           </div>
         </div>
       )}
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} scrollCommand={helpScrollCommand} />
       <ToastContainer />
     </main>
   );

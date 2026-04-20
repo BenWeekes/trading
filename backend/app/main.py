@@ -11,7 +11,7 @@ from .config import get_settings
 from .database import init_db
 from .db.helpers import utcnow_iso
 from .db.repositories import get_role_config, upsert_role_config
-from .routes import agora, config, events, recommendations, roles, scanner, strategy_settings, trades
+from .routes import agora, config, events, recommendations, roles, scanner, strategy_settings, subjects, trades
 
 
 def seed_role_configs() -> None:
@@ -105,6 +105,7 @@ app.add_middleware(
 )
 
 app.include_router(events.router)
+app.include_router(subjects.router)
 app.include_router(scanner.router)
 app.include_router(roles.router)
 app.include_router(recommendations.router)

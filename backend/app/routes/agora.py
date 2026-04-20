@@ -10,13 +10,26 @@ import httpx
 
 from ..config import get_settings
 from ..db.helpers import new_id, utcnow_iso
-from ..db.repositories import get_recommendation, list_recommendations, upsert_recommendation
+from ..db.repositories import (
+    create_role_thread,
+    get_recommendation,
+    get_role_thread,
+    insert_role_message,
+    list_recommendations,
+    list_role_messages,
+    upsert_recommendation,
+)
 from ..roles import Orchestrator
 from ..services.agora_bridge import trader_avatar_bridge
+from ..services.discussion_subjects import ensure_recommendation_subject
+from ..services.event_bus import event_bus
 from ..services.voice_tools import (
     TOOL_DEFINITIONS,
     build_voice_context,
     execute_tool,
+    get_active_rec_id,
+    maybe_handle_direct_open_intent,
+    maybe_handle_direct_pending_intent,
     set_active_context,
 )
 
@@ -75,6 +88,28 @@ async def agora_chat_completions(payload: dict):
     # Extract session info
     session_id = payload.get("channel") or payload.get("agent_uid") or "default"
     settings = get_settings()
+
+    latest_user_text = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+    direct_pending_result = await maybe_handle_direct_pending_intent(session_id, latest_user_text)
+    if direct_pending_result is not None:
+        await _persist_voice_turn(session_id, messages, direct_pending_result)
+        return {
+            "id": new_id("chatcmpl"),
+            "object": "chat.completion",
+            "created": int(__import__("time").time()),
+            "model": payload.get("model") or settings.openai_model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": direct_pending_result}, "finish_reason": "stop"}],
+        }
+    direct_open_result = await maybe_handle_direct_open_intent(session_id, latest_user_text)
+    if direct_open_result is not None:
+        await _persist_voice_turn(session_id, messages, direct_open_result)
+        return {
+            "id": new_id("chatcmpl"),
+            "object": "chat.completion",
+            "created": int(__import__("time").time()),
+            "model": payload.get("model") or settings.openai_model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": direct_open_result}, "finish_reason": "stop"}],
+        }
 
     # Build context and inject as system message
     context_text = build_voice_context(session_id)
@@ -155,8 +190,8 @@ async def agora_chat_completions(payload: dict):
                 final_content = msg.get("content", "")
                 break
 
-    # Also store in group chat
-    _store_voice_message(session_id, final_content)
+    # Persist the voice exchange into the same ticker thread as typed desk chat.
+    await _persist_voice_turn(session_id, messages, final_content)
 
     if is_stream:
         return StreamingResponse(_stream_response(final_content, model), media_type="text/event-stream")
@@ -233,26 +268,121 @@ def _extract_tool_calls_from_responses(data: dict) -> list[dict]:
     return tool_calls
 
 
-def _store_voice_message(session_id: str, content: str) -> None:
-    """Store voice interaction in the desk chat timeline."""
-    if not content:
+async def _persist_voice_turn(session_id: str, messages: list[dict], content: str) -> None:
+    """Persist the latest spoken user turn and trader reply into the active recommendation thread."""
+    recommendation_id = get_active_rec_id(session_id)
+    if not recommendation_id:
         return
-    from ..services.event_bus import event_bus
-    import asyncio
-    msg = {
-        "id": new_id("msg"),
+    recommendation = get_recommendation(recommendation_id)
+    if not recommendation:
+        return
+    subject = ensure_recommendation_subject(recommendation_id)
+    thread = _ensure_trader_thread(recommendation["symbol"], recommendation_id)
+
+    user_text = _latest_user_message(messages)
+    if user_text:
+        user_msg = _make_voice_message(
+            thread_id=thread["id"],
+            symbol=recommendation["symbol"],
+            recommendation_id=recommendation_id,
+            discussion_subject_id=subject["id"] if subject else None,
+            sender="user",
+            text=user_text,
+            structured_payload={"type": "voice_user_message", "source": "agora", "session_id": session_id},
+        )
+        if not _is_duplicate_message(thread["id"], user_msg["sender"], user_msg["message_text"]):
+            insert_role_message(user_msg)
+            await event_bus.publish("role_message", user_msg)
+
+    trader_text = (content or "").strip()
+    if trader_text:
+        trader_msg = _make_voice_message(
+            thread_id=thread["id"],
+            symbol=recommendation["symbol"],
+            recommendation_id=recommendation_id,
+            discussion_subject_id=subject["id"] if subject else None,
+            sender="role:trader",
+            text=trader_text,
+            structured_payload={"type": "voice_response", "source": "agora", "session_id": session_id},
+        )
+        if not _is_duplicate_message(thread["id"], trader_msg["sender"], trader_msg["message_text"]):
+            insert_role_message(trader_msg)
+            await event_bus.publish("role_message", trader_msg)
+
+
+def _ensure_trader_thread(symbol: str, recommendation_id: str) -> dict:
+    thread = get_role_thread("trader", recommendation_id)
+    if thread:
+        return thread
+    thread = {
+        "id": new_id("thread"),
         "role": "trader",
-        "sender": "role:trader",
-        "message_text": content,
-        "structured_payload": {"type": "voice_response"},
+        "symbol": symbol,
+        "recommendation_id": recommendation_id,
+        "created_at": utcnow_iso(),
+    }
+    create_role_thread(thread)
+    return thread
+
+
+def _make_voice_message(*, thread_id: str, symbol: str, recommendation_id: str, discussion_subject_id: str | None, sender: str, text: str, structured_payload: dict) -> dict:
+    return {
+        "id": new_id("msg"),
+        "role_thread_id": thread_id,
+        "role": "trader",
+        "sender": sender,
+        "symbol": symbol,
+        "recommendation_id": recommendation_id,
+        "discussion_subject_id": discussion_subject_id,
+        "message_text": text,
+        "structured_payload": structured_payload,
+        "stance": None,
+        "confidence": None,
+        "provider": None,
+        "model_used": None,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0.0,
         "timestamp": utcnow_iso(),
     }
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(event_bus.publish("role_message", msg))
-    except Exception:
-        pass
+
+
+def _is_duplicate_message(thread_id: str, sender: str, text: str) -> bool:
+    existing = list_role_messages(thread_id=thread_id)
+    if not existing:
+        return False
+    last = existing[-1]
+    return last.get("sender") == sender and (last.get("message_text") or "").strip() == text.strip()
+
+
+def _latest_user_message(messages: list[dict]) -> str:
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = _message_text(message.get("content"))
+        if content:
+            return content
+    return ""
+
+
+def _message_text(content: object) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content") or item.get("value")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(part.strip() for part in parts if part and part.strip()).strip()
+    if isinstance(content, dict):
+        text = content.get("text") or content.get("content") or content.get("value")
+        if isinstance(text, str):
+            return text.strip()
+    return ""
 
 
 async def _stream_response(content: str, model: str) -> AsyncGenerator[bytes, None]:

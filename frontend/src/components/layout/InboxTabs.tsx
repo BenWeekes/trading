@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EventItem, Recommendation } from "@/lib/types";
 
 type TabId = "earnings" | "ai" | "news";
@@ -15,6 +15,7 @@ type Props = {
   onSelectEvent: (event: EventItem) => void;
   onSelectRecommendation: (rec: Recommendation) => void;
   onSelectNews?: (event: EventItem) => void;
+  scrollCommand?: { direction: "up" | "down"; nonce: number } | null;
 };
 
 const PENDING = new Set(["awaiting_user_feedback", "awaiting_user_approval", "draft_recommendation", "under_discussion"]);
@@ -22,17 +23,34 @@ const DIR_COLORS: Record<string, string> = {
   BUY: "var(--buy)", SELL: "var(--sell)", SHORT: "var(--warn)", COVER: "var(--accent)", PASS: "var(--text-muted)",
 };
 
-export function InboxTabs({ events, recommendations, companyNames = {}, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation, onSelectNews }: Props) {
+function dedupeBySymbol(items: Recommendation[]) {
+  const seen = new Set<string>();
+  const out: Recommendation[] = [];
+  for (const item of items) {
+    if (seen.has(item.symbol)) continue;
+    seen.add(item.symbol);
+    out.push(item);
+  }
+  return out;
+}
+
+export function InboxTabs({ events, recommendations, companyNames = {}, activeSymbol, activeTab: externalTab, onTabChange, onSelectEvent, onSelectRecommendation, onSelectNews, scrollCommand }: Props) {
   const [internalTab, setInternalTab] = useState<TabId>("earnings");
+  const scrollRef = useRef<HTMLDivElement>(null);
   const tab = externalTab ?? internalTab;
   const setTab = (t: TabId) => { setInternalTab(t); onTabChange?.(t); };
+
+  useEffect(() => {
+    if (!scrollCommand || !scrollRef.current) return;
+    scrollRef.current.scrollBy({ top: scrollCommand.direction === "down" ? 240 : -240, behavior: "smooth" });
+  }, [scrollCommand]);
 
   // Split events
   const earningsEvents = events.filter((e) => e.type === "earnings");
   const newsEvents = events.filter((e) => e.type !== "earnings" && e.type !== "price_alert");
 
   // AI recs — actionable only
-  const aiRecs = recommendations.filter((r) => r.direction && r.direction !== "PASS");
+  const aiRecs = dedupeBySymbol(recommendations.filter((r) => r.direction && r.direction !== "PASS"));
   const pendingCount = aiRecs.filter((r) => PENDING.has(r.status)).length;
 
   return (
@@ -45,7 +63,7 @@ export function InboxTabs({ events, recommendations, companyNames = {}, activeSy
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
         {tab === "earnings" && (
           earningsEvents.length === 0 ? (
             <Empty>Earnings events appear here automatically when stocks report. No scan needed.</Empty>

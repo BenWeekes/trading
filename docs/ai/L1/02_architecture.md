@@ -21,7 +21,8 @@ The backend is the system of record. The frontend is a view layer.
 ## Core components
 
 Frontend:
-- inbox tabs (events / recommendations)
+- inbox tabs (earnings / AI recommendations / news — 3 tabs)
+- news reader (centre column, opens on news item click, replaces trade panel while active)
 - trade panel (summary + buy controls + prices)
 - desk chat (group chat with @role routing and filters)
 - avatar panel (Agora RTC video/audio)

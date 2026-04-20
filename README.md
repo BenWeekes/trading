@@ -61,6 +61,35 @@ npm run dev
 # Click "Random Event" to start
 ```
 
+## One-Command Local Stack
+
+To start or repair the full local stack, including the Cloudflare tunnel used by Agora ConvoAI:
+
+```bash
+make stack-restart
+```
+
+That command will:
+- restart the trading backend on `8000`
+- restart the frontend on `3000`
+- restart the Agora sample backend on `8082`
+- restart the avatar client on `8084`
+- start a fresh `cloudflared` quick tunnel to `http://localhost:8000`
+- rewrite `agora-agent-samples/simple-backend/.env` so `VIDEO_LLM_URL` points at the current tunnel
+- verify:
+  - `http://localhost:3000`
+  - `http://localhost:8000/api/status`
+  - `http://localhost:8082/health`
+  - `http://localhost:8084`
+  - tunneled `POST /api/agora/chat/completions`
+
+Use these commands afterward:
+
+```bash
+make stack-check
+make stack-down
+```
+
 ## Environment Variables
 
 ```bash

@@ -3,14 +3,20 @@ from __future__ import annotations
 from ..adapters.llm import get_provider
 from ..db.helpers import new_id, utcnow_iso
 from ..db.repositories import create_role_thread, get_role_config, get_role_thread, insert_cost, insert_role_message
+from ..services.discussion_subjects import ensure_recommendation_subject
 
 
 class BaseRole:
     role_name = "base"
     response_schema: dict | None = None
 
-    async def ensure_thread(self, symbol: str, recommendation_id: str) -> dict:
-        existing = get_role_thread(self.role_name, recommendation_id)
+    async def ensure_thread(
+        self,
+        symbol: str,
+        recommendation_id: str | None = None,
+        discussion_subject_id: str | None = None,
+    ) -> dict:
+        existing = get_role_thread(self.role_name, recommendation_id, discussion_subject_id)
         if existing:
             return existing
         thread = {
@@ -18,6 +24,7 @@ class BaseRole:
             "role": self.role_name,
             "symbol": symbol,
             "recommendation_id": recommendation_id,
+            "discussion_subject_id": discussion_subject_id,
             "created_at": utcnow_iso(),
         }
         create_role_thread(thread)
@@ -38,8 +45,18 @@ class BaseRole:
             "max_tokens_per_call": 4096,
         }
 
-    async def respond(self, *, symbol: str, recommendation_id: str, prompt: str, context: dict, sender: str) -> dict:
-        thread = await self.ensure_thread(symbol, recommendation_id)
+    async def respond(
+        self,
+        *,
+        symbol: str,
+        recommendation_id: str | None = None,
+        discussion_subject_id: str | None = None,
+        prompt: str,
+        context: dict,
+        sender: str,
+    ) -> dict:
+        thread = await self.ensure_thread(symbol, recommendation_id, discussion_subject_id)
+        subject = ensure_recommendation_subject(recommendation_id) if recommendation_id else None
         config = self._config()
         provider = get_provider(config["provider"])
         result = await provider.complete(
@@ -56,6 +73,7 @@ class BaseRole:
             "sender": sender,
             "symbol": symbol,
             "recommendation_id": recommendation_id,
+            "discussion_subject_id": discussion_subject_id or (subject["id"] if subject else None),
             "message_text": result.text,
             "structured_payload": result.structured_payload,
             "stance": context.get("stance"),
@@ -72,7 +90,7 @@ class BaseRole:
             {
                 "id": new_id("cost"),
                 "role": self.role_name,
-                "recommendation_id": recommendation_id,
+                    "recommendation_id": recommendation_id,
                 "provider": result.provider,
                 "model": result.model,
                 "input_tokens": result.input_tokens,

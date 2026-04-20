@@ -34,8 +34,8 @@
 
 1. Start backend.
 2. Start frontend.
-3. Open the app.
-4. Click `Random Event`.
+3. Open the app — auto-scan triggers on first load, populating earnings events.
+4. Select an earnings event from the Earnings tab; analysis runs in background.
 5. Ask directed questions in desk chat.
 6. Move rec from feedback to approval.
 7. Approve and execute.

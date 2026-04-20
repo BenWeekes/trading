@@ -52,6 +52,7 @@ System:
 - `recommendation_update` — status or direction changed
 - `position_update` — trade opened/closed
 - `cost_alert` — cost budget threshold
+- `voice_command` — trader avatar action (navigate, execute, reject, approve); payload includes `action` and `recommendation_id`
 - `system` — scan status, analysis errors
 
 ## Key object shapes

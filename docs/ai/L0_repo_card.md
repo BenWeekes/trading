@@ -6,7 +6,7 @@ primary_languages: `Python`, `TypeScript`
 frameworks: `FastAPI`, `Next.js`, `React`, `SQLite`, `Agora RTC`
 runtime_modes: `local dev`, `paper trading`, `demo/mock`, `optional Agora trader avatar`
 system_of_record: `backend FastAPI app + SQLite`
-last_reviewed: `2026-04-13`
+last_reviewed: `2026-04-20`
 
 | L1 File | Purpose |
 | --- | --- |

@@ -36,8 +36,8 @@ docs/ai/                 AI-facing progressive disclosure docs
 ## Frontend key files
 
 - `frontend/src/app/page.tsx`: main workstation — 3 columns, SSE, all handlers
-- `frontend/src/components/layout/Header.tsx`: header with scan + settings buttons
-- `frontend/src/components/layout/InboxTabs.tsx`: left column — Events/Recommendations tabs
+- `frontend/src/components/layout/Header.tsx`: header with settings button (no scan button — auto-scan on load)
+- `frontend/src/components/layout/InboxTabs.tsx`: left column — 3 tabs: Earnings / AI / News
 - `frontend/src/components/roles/GroupChat.tsx`: desk chat — @mentions, keyboard nav, role filters
 - `frontend/src/components/trades/TradePanel.tsx`: centre top — summary + buy controls + price levels
 - `frontend/src/components/trades/AvatarAndPositions.tsx`: right column — Agora RTC avatar + portfolio with sell/cover

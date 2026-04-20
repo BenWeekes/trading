@@ -6,8 +6,11 @@ import re
 from ..db.helpers import new_id, utcnow_iso
 from ..services.position_sizing import calculate_position, conviction_multiplier
 from ..db.repositories import (
+    get_discussion_subject,
+    get_event,
     get_recommendation,
     get_role_thread,
+    get_trade,
     get_summary,
     insert_role_message,
     list_role_messages,
@@ -15,6 +18,7 @@ from ..db.repositories import (
     upsert_summary,
 )
 from ..services.event_bus import event_bus
+from ..services.discussion_subjects import ensure_recommendation_subject
 from ..services.state_machine import ensure_transition
 from .quant_pricing import QuantPricingRole
 from .research import ResearchRole
@@ -30,6 +34,7 @@ class Orchestrator:
         self.trader = TraderRole()
 
     async def analyze_event(self, recommendation: dict, event: dict, portfolio: dict) -> dict:
+        subject = ensure_recommendation_subject(recommendation["id"])
         ensure_transition(recommendation["status"], "under_discussion")
         recommendation["status"] = "under_discussion"
         recommendation["updated_at"] = utcnow_iso()
@@ -138,6 +143,7 @@ class Orchestrator:
                 "id": new_id("msg"), "role_thread_id": risk_msg.get("role_thread_id", ""),
                 "role": "risk", "sender": "system",
                 "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
+                "discussion_subject_id": subject["id"] if subject else None,
                 "message_text": f"Risk VETO: {veto_reason}. Trade blocked.",
                 "structured_payload": {"type": "risk_veto"}, "stance": None, "confidence": None,
                 "provider": None, "model_used": None, "input_tokens": 0, "output_tokens": 0,
@@ -155,6 +161,7 @@ class Orchestrator:
                 "id": new_id("msg"), "role_thread_id": research_msg.get("role_thread_id", ""),
                 "role": "research", "sender": "system",
                 "symbol": recommendation["symbol"], "recommendation_id": recommendation["id"],
+                "discussion_subject_id": subject["id"] if subject else None,
                 "message_text": f"Research flagged beat quality as {beat_quality}. Conviction reduced to {conviction}/10.",
                 "structured_payload": {"type": "research_downgrade"}, "stance": None, "confidence": None,
                 "provider": None, "model_used": None, "input_tokens": 0, "output_tokens": 0,
@@ -229,6 +236,7 @@ class Orchestrator:
         recommendation = get_recommendation(recommendation_id)
         if not recommendation:
             raise ValueError("Recommendation not found")
+        subject = ensure_recommendation_subject(recommendation_id) if recommendation_id else None
         role_map = {
             "research": self.research,
             "risk": self.risk,
@@ -294,6 +302,56 @@ class Orchestrator:
                 break
         return await self.user_chat(role_name, recommendation_id, stripped)
 
+    async def subject_chat(self, discussion_subject_id: str, message: str) -> dict:
+        subject = get_discussion_subject(discussion_subject_id)
+        if not subject:
+            raise ValueError("Discussion subject not found")
+        recommendation_id = subject.get("recommendation_id")
+        if recommendation_id:
+            return await self.route_group_chat(recommendation_id, message)
+
+        stripped = message.strip()
+        role_name = "trader"
+        for candidate in ("research", "risk", "quant_pricing", "trader"):
+            token = f"@{candidate}"
+            if stripped.lower().startswith(token):
+                role_name = candidate
+                stripped = stripped[len(token):].strip() or f"Respond as {candidate}."
+                break
+
+        role_map = {
+            "research": self.research,
+            "risk": self.risk,
+            "quant_pricing": self.quant,
+            "trader": self.trader,
+        }
+        role = role_map[role_name]
+        symbol = subject.get("symbol") or ""
+        await self._insert_user_message(
+            role=role,
+            recommendation_id=None,
+            discussion_subject_id=discussion_subject_id,
+            symbol=symbol,
+            message=stripped,
+        )
+        context = {
+            "symbol": symbol,
+            "discussion_subject": subject,
+            "event": get_event(subject["event_id"]) if subject.get("event_id") else None,
+            "trade": get_trade(subject["trade_id"]) if subject.get("trade_id") else None,
+            "user_message": stripped,
+        }
+        response = await role.respond(
+            symbol=symbol,
+            recommendation_id=None,
+            discussion_subject_id=discussion_subject_id,
+            prompt=stripped,
+            context=context,
+            sender=f"role:{role_name}",
+        )
+        await event_bus.publish("role_message", response)
+        return response
+
     def timeline(self, recommendation_id: str) -> list[dict]:
         return list_role_messages(recommendation_id=recommendation_id)
 
@@ -317,8 +375,17 @@ class Orchestrator:
             return ["research", "risk", "quant_pricing"]
         return []
 
-    async def _role_query(self, *, role, recommendation_id: str, symbol: str, question: str) -> dict:
-        thread = await role.ensure_thread(symbol, recommendation_id)
+    async def _role_query(
+        self,
+        *,
+        role,
+        recommendation_id: str | None,
+        discussion_subject_id: str | None = None,
+        symbol: str,
+        question: str,
+    ) -> dict:
+        thread = await role.ensure_thread(symbol, recommendation_id, discussion_subject_id)
+        subject = ensure_recommendation_subject(recommendation_id)
         query_message = {
             "id": new_id("msg"),
             "role_thread_id": thread["id"],
@@ -326,6 +393,7 @@ class Orchestrator:
             "sender": "role:trader",
             "symbol": symbol,
             "recommendation_id": recommendation_id,
+            "discussion_subject_id": discussion_subject_id or (subject["id"] if subject else None),
             "message_text": question,
             "structured_payload": {"type": "role_query"},
             "stance": None,
@@ -351,13 +419,23 @@ class Orchestrator:
         return await role.respond(
             symbol=symbol,
             recommendation_id=recommendation_id,
+            discussion_subject_id=discussion_subject_id or (subject["id"] if subject else None),
             prompt=question,
             context={"symbol": symbol, "question_from_trader": question},
             sender=f"role:{role.role_name}",
         )
 
-    async def _insert_user_message(self, *, role, recommendation_id: str, symbol: str, message: str) -> dict:
-        thread = get_role_thread(role.role_name, recommendation_id) or await role.ensure_thread(symbol, recommendation_id)
+    async def _insert_user_message(
+        self,
+        *,
+        role,
+        recommendation_id: str | None,
+        discussion_subject_id: str | None = None,
+        symbol: str,
+        message: str,
+    ) -> dict:
+        thread = get_role_thread(role.role_name, recommendation_id, discussion_subject_id) or await role.ensure_thread(symbol, recommendation_id, discussion_subject_id)
+        subject = ensure_recommendation_subject(recommendation_id) if recommendation_id else None
         user_message = {
             "id": new_id("msg"),
             "role_thread_id": thread["id"],
@@ -365,6 +443,7 @@ class Orchestrator:
             "sender": "user",
             "symbol": symbol,
             "recommendation_id": recommendation_id,
+            "discussion_subject_id": discussion_subject_id or (subject["id"] if subject else None),
             "message_text": message,
             "structured_payload": {"type": "directed_user_message", "target_role": role.role_name},
             "stance": None,

@@ -53,13 +53,38 @@ CREATE TABLE IF NOT EXISTS recommendations (
 CREATE INDEX IF NOT EXISTS idx_recs_status ON recommendations(status);
 CREATE INDEX IF NOT EXISTS idx_recs_symbol ON recommendations(symbol);
 
+CREATE TABLE IF NOT EXISTS discussion_subjects (
+    id TEXT PRIMARY KEY,
+    subject_type TEXT NOT NULL,
+    symbol TEXT,
+    event_id TEXT,
+    recommendation_id TEXT,
+    trade_id TEXT,
+    headline TEXT,
+    summary TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (event_id) REFERENCES events(id),
+    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id),
+    FOREIGN KEY (trade_id) REFERENCES trades(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subjects_type ON discussion_subjects(subject_type);
+CREATE INDEX IF NOT EXISTS idx_subjects_symbol ON discussion_subjects(symbol);
+CREATE INDEX IF NOT EXISTS idx_subjects_rec ON discussion_subjects(recommendation_id);
+CREATE INDEX IF NOT EXISTS idx_subjects_event ON discussion_subjects(event_id);
+CREATE INDEX IF NOT EXISTS idx_subjects_trade ON discussion_subjects(trade_id);
+
 CREATE TABLE IF NOT EXISTS role_threads (
     id TEXT PRIMARY KEY,
     role TEXT NOT NULL,
     symbol TEXT NOT NULL,
     recommendation_id TEXT,
+    discussion_subject_id TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id)
+    FOREIGN KEY (recommendation_id) REFERENCES recommendations(id),
+    FOREIGN KEY (discussion_subject_id) REFERENCES discussion_subjects(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_threads_rec ON role_threads(recommendation_id);
@@ -71,6 +96,7 @@ CREATE TABLE IF NOT EXISTS role_messages (
     sender TEXT NOT NULL,
     symbol TEXT,
     recommendation_id TEXT,
+    discussion_subject_id TEXT,
     message_text TEXT NOT NULL,
     structured_payload TEXT,
     stance TEXT,
@@ -199,7 +225,17 @@ def _db_path() -> Path:
 def init_db() -> None:
     with sqlite3.connect(_db_path()) as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "role_threads", "discussion_subject_id", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_threads_subject ON role_threads(discussion_subject_id)")
+        _ensure_column(conn, "role_messages", "discussion_subject_id", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_subject ON role_messages(discussion_subject_id)")
         conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_def: str) -> None:
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_def}")
 
 
 @contextmanager

@@ -8,6 +8,23 @@ from .helpers import dump_json, load_json
 
 def insert_event(record: dict) -> None:
     with get_conn() as conn:
+        duplicate = conn.execute(
+            """
+            SELECT id FROM events
+            WHERE type = ?
+              AND COALESCE(symbol, '') = COALESCE(?, '')
+              AND headline = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (
+                record["type"],
+                record.get("symbol"),
+                record["headline"],
+            ),
+        ).fetchone()
+        if duplicate and duplicate["id"] != record["id"]:
+            conn.execute("DELETE FROM events WHERE id = ?", (duplicate["id"],))
         conn.execute(
             """
             INSERT OR REPLACE INTO events (

@@ -31,8 +31,8 @@ Frontend:
 - toast notifications
 
 Backend:
-- routes (events, recommendations, trades, settings, avatar)
-- role orchestration (parallel analysis, trader synthesis, inter-role queries)
+- routes (events, recommendations, trades, settings, avatar, subjects)
+- role orchestration (parallel analysis, trader synthesis, inter-role queries, subject chat)
 - role classes (research, risk, quant_pricing, trader) with own sessions
 - LLM provider abstraction (OpenAI Responses API / Chat API / mock)
 - state machine (12 recommendation states)
@@ -40,6 +40,7 @@ Backend:
 - Alpaca adapter (bracket orders, position close)
 - event bus (SSE broadcasting)
 - strategy settings (persisted defaults from operator spec)
+- discussion subjects (generic discussion thread for any event, recommendation, or position)
 
 ## Main flow
 
@@ -63,6 +64,10 @@ Backend:
 - LLM responses parsed for JSON even when truncated (regex fallback)
 - Conviction below threshold produces zero shares (won't trade)
 - Settings panel backed by operator spec defaults
+- `discussion_subject` is the single source of truth for all chat — typed and voice messages both persist against it
+- Recommendations are execution objects; discussion subjects are conversation objects — they are linked but separate
+- Frontend tracks `activeSubject` (not `activeRec`) as primary state; centre panel renders based on `subject_type`
+- Voice replies are persisted to DB before SSE fires — SSE is real-time delivery only, not history
 
 ## Agora integration
 

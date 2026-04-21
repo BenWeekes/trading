@@ -80,6 +80,21 @@ def _dedupe_recommendations_by_symbol(items: list[dict]) -> list[dict]:
     return out
 
 
+def _dedupe_events(items: list[dict]) -> list[dict]:
+    seen: set[tuple[str, str, str]] = set()
+    out: list[dict] = []
+    for item in items:
+        event_type = str(item.get("type") or "")
+        symbol = str(item.get("symbol") or "")
+        headline = str(item.get("headline") or "").strip()
+        key = (event_type, symbol, headline)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
 # ── Active context tracking ──
 
 _active_context: dict[str, str] = {}  # session_id → recommendation_id
@@ -255,13 +270,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "ui_control",
-            "description": "Control the UI. Use for: show earnings, show ai, show news (left tabs), open/close settings, open/close help, filter chat by role, mute, end call.",
+            "description": "Control the UI. Use for: show earnings, show ai, show news (left tabs), show open/all/gainers/losers/active (right market tabs), open/close settings, open/close help, filter chat by role, mute, end call.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["show_earnings", "show_ai", "show_news", "open_settings", "close_settings",
+                        "enum": ["show_earnings", "show_ai", "show_news", "show_open", "show_all", "show_gainers", "show_losers", "show_active", "open_settings", "close_settings",
                                  "open_help", "close_help", "filter_chat", "end_call", "mute", "unmute", "scroll_down", "scroll_up"],
                     },
                     "value": {"type": "string", "description": "For filter_chat: role name or 'all'."},
@@ -312,7 +327,7 @@ async def execute_tool(name: str, args: dict, session_id: str) -> str:
         elif name == "list_recommendations":
             return _exec_list_recs(session_id)
         elif name == "list_inbox_items":
-            return _exec_list_inbox_items(args, session_id)
+            return await _exec_list_inbox_items(args, session_id)
         elif name == "ask_role":
             return await _exec_ask_role(args, session_id)
         elif name == "scan_earnings":
@@ -543,7 +558,7 @@ def _exec_list_recs(session_id: str) -> str:
     return f"{len(recs)} recommendation{'s' if len(recs)!=1 else ''}: " + ". ".join(lines[:5])
 
 
-def _exec_list_inbox_items(args: dict, session_id: str) -> str:
+async def _exec_list_inbox_items(args: dict, session_id: str) -> str:
     tab = args.get("tab", "")
     try:
         limit = max(1, min(int(args.get("limit") or 5), 10))
@@ -551,6 +566,7 @@ def _exec_list_inbox_items(args: dict, session_id: str) -> str:
         limit = 5
 
     if tab == "ai":
+        await event_bus.publish("voice_command", {"action": "show_ai"})
         return _exec_list_recs(session_id)
     if tab == "positions":
         positions = get_positions()
@@ -564,10 +580,12 @@ def _exec_list_inbox_items(args: dict, session_id: str) -> str:
         _set_last_list(session_id, "positions", last_items)
         return f"{len(positions)} position{'s' if len(positions)!=1 else ''}: " + ". ".join(lines)
 
-    events = list_events(limit=100)
+    events = _dedupe_events(list_events(limit=100))
     if tab == "earnings":
+        await event_bus.publish("voice_command", {"action": "show_earnings"})
         rows = [e for e in events if e.get("type") == "earnings"][:limit]
     elif tab == "news":
+        await event_bus.publish("voice_command", {"action": "show_news"})
         rows = [e for e in events if e.get("type") not in {"earnings", "price_alert"}][:limit]
     else:
         rows = []
@@ -625,6 +643,11 @@ async def _exec_ui(args: dict) -> str:
         "show_earnings": "Showing earnings tab.",
         "show_ai": "Showing AI recommendations tab.",
         "show_news": "Showing news tab.",
+        "show_open": "Showing open positions.",
+        "show_all": "Showing all tracked stocks.",
+        "show_gainers": "Showing gainers.",
+        "show_losers": "Showing losers.",
+        "show_active": "Showing active movers.",
         "open_settings": "Opening settings.",
         "close_settings": "Settings closed.",
         "open_help": "Opening help.",
@@ -671,7 +694,7 @@ def build_voice_context(session_id: str) -> str:
         "APP LAYOUT the user sees:",
         "- Left column has 3 tabs: Earnings (clickable, loads AI analysis), AI (recommendations to approve/reject), News (read-only headlines, clickable to read in centre)",
         "- Centre: trade summary + avatar (you) at top, desk chat below. When user reads news, it replaces the summary and chat switches to news discussion.",
-        "- Right column: market lists with tabs — Open (positions), All (all tracked), Gainers, Losers, Active. Prices update live.",
+        "- Right column: market lists with tabs — Open, All, Gainers, Losers, Active. Prices update live.",
         "- Header: Settings, Help buttons. Portfolio/Cash/P&L display.",
         "- Data flows in automatically — earnings scan, news, market movers. No manual scan button needed.",
         "",

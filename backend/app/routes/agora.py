@@ -37,6 +37,36 @@ router = APIRouter(prefix="/api", tags=["agora"])
 orchestrator = Orchestrator()
 
 
+def _find_recommendation_id_for_channel(channel: str | None) -> str | None:
+    if not channel:
+        return None
+    normalized = "".join(ch for ch in channel.lower() if ch.isalnum())
+    for rec in list_recommendations(limit=200):
+        rec_id = rec.get("id") or ""
+        rec_norm = "".join(ch for ch in rec_id.lower() if ch.isalnum())
+        if rec_norm and rec_norm in normalized:
+            return rec_id
+    return None
+
+
+@router.post("/agora/register-agent")
+async def agora_register_agent(payload: dict):
+    channel = payload.get("channel")
+    agent_id = payload.get("agent_id")
+    rec_id = payload.get("recommendation_id") or _find_recommendation_id_for_channel(channel)
+    if rec_id:
+        if channel:
+            set_active_context(channel, rec_id)
+        if agent_id:
+            set_active_context(agent_id, rec_id)
+    return {
+        "ok": True,
+        "channel": channel,
+        "agent_id": agent_id,
+        "recommendation_id": rec_id,
+    }
+
+
 @router.get("/trader/avatar/status")
 async def trader_avatar_status(recommendation_id: str | None = Query(default=None)):
     return trader_avatar_bridge.session_status(recommendation_id)

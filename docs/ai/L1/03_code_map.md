@@ -25,7 +25,9 @@ docs/ai/                 AI-facing progressive disclosure docs
 - `backend/app/routes/scanner.py`: scan and random-event entry points (background analysis)
 - `backend/app/routes/trades.py`: sell/close endpoint with long/short P&L
 - `backend/app/routes/strategy_settings.py`: settings CRUD with operator spec defaults
-- `backend/app/routes/agora.py`: trader avatar + Agora-compatible proxy routes
+- `backend/app/routes/agora.py`: trader avatar + Agora-compatible proxy routes; voice turn persistence
+- `backend/app/routes/subjects.py`: discussion subject resolution, detail, and subject-scoped chat
+- `backend/app/services/discussion_subjects.py`: ensure_recommendation_subject / ensure_event_subject / ensure_position_subject (find-or-create helpers)
 - `backend/app/services/state_machine.py`: allowed state transitions
 - `backend/app/services/position_sizing.py`: conviction-based position sizing
 - `backend/app/services/agora_bridge.py`: two-phase Agora agent start
@@ -35,7 +37,7 @@ docs/ai/                 AI-facing progressive disclosure docs
 
 ## Frontend key files
 
-- `frontend/src/app/page.tsx`: main workstation — 3 columns, SSE, all handlers
+- `frontend/src/app/page.tsx`: main workstation — 3 columns, SSE, all handlers; `activeSubject` drives centre panel
 - `frontend/src/components/layout/Header.tsx`: header with settings button (no scan button — auto-scan on load)
 - `frontend/src/components/layout/InboxTabs.tsx`: left column — 3 tabs: Earnings / AI / News
 - `frontend/src/components/roles/GroupChat.tsx`: desk chat — @mentions, keyboard nav, role filters
@@ -45,8 +47,9 @@ docs/ai/                 AI-facing progressive disclosure docs
 - `frontend/src/components/shared/Toast.tsx`: toast notification system
 - `frontend/src/hooks/useAgoraAvatar.ts`: Agora RTC join/leave/mute
 - `frontend/src/hooks/useSSE.ts`: SSE subscription hook
-- `frontend/src/lib/api.ts`: API client
-- `frontend/src/lib/types.ts`: TypeScript types
+- `frontend/src/lib/api.ts`: API client (includes resolveSubject, subject, discussSubject)
+- `frontend/src/lib/types.ts`: TypeScript types (includes DiscussionSubject, ActiveSubjectPayload)
+- `scripts/dev_stack.py`: local dev stack startup — starts backend, frontend, and optional Agora agent
 
 ## Tests
 

@@ -126,7 +126,7 @@ async def poll_stock_news():
     if not news:
         return
     # Dedupe by headline against existing events
-    existing_headlines = {e["headline"] for e in list_events(limit=50)}
+    existing_headlines = {e["headline"] for e in list_events(limit=200)}
     for n in news[:5]:
         headline = n.get("title", "")[:120]
         if headline in existing_headlines:
@@ -154,7 +154,7 @@ async def poll_general_news():
     raw = await _safe_call(_fmp._get("news/general-latest", {"limit": 5}), "general-news")
     if not raw or not isinstance(raw, list):
         return
-    existing_headlines = {e["headline"] for e in list_events(limit=50)}
+    existing_headlines = {e["headline"] for e in list_events(limit=200)}
     for n in raw[:3]:
         headline = n.get("title", "")[:120]
         if headline in existing_headlines:

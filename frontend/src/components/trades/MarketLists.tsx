@@ -21,13 +21,17 @@ type Props = {
   activeSymbol?: string | null;
   onSell: (tradeId: string, symbol: string, shares: number) => void;
   onSelectSymbol?: (symbol: string) => void;
+  activeTab?: Tab;
+  onTabChange?: (tab: Tab) => void;
 };
 
-export function MarketLists({ positions, activeSymbol, onSell, onSelectSymbol }: Props) {
-  const [tab, setTab] = useState<Tab>("open");
+export function MarketLists({ positions, activeSymbol, onSell, onSelectSymbol, activeTab: externalTab, onTabChange }: Props) {
+  const [internalTab, setInternalTab] = useState<Tab>("open");
   const [pulseStocks, setPulseStocks] = useState<PulseStock[]>([]);
   const [tickerPrices, setTickerPrices] = useState<Record<string, PulseStock>>({});
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tab = externalTab ?? internalTab;
+  const setTab = (next: Tab) => { setInternalTab(next); onTabChange?.(next); };
 
   const fetchPulse = useCallback(async () => {
     try {

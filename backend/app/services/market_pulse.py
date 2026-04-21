@@ -16,6 +16,15 @@ _pulse_data: dict[str, dict] = {}  # symbol → latest data
 _pulse_running = False
 _pulse_calls = 0
 _pulse_start = 0.0
+_pulse_lock: asyncio.Lock | None = None
+_last_refresh = 0.0
+
+
+def _ensure_lock() -> asyncio.Lock:
+    global _pulse_lock
+    if _pulse_lock is None:
+        _pulse_lock = asyncio.Lock()
+    return _pulse_lock
 
 
 def get_pulse_data() -> dict:
@@ -31,6 +40,62 @@ def get_pulse_data() -> dict:
     }
 
 
+async def _refresh_once() -> None:
+    global _pulse_calls, _pulse_start, _last_refresh
+    if not _pulse_start:
+        _pulse_start = time.time()
+
+    for name, method in [("gainers", _fmp.biggest_gainers), ("losers", _fmp.biggest_losers), ("active", _fmp.most_active)]:
+        try:
+            data = await method()
+            _pulse_calls += 1
+            if not data:
+                continue
+
+            for stock in data:
+                symbol = stock.get("symbol")
+                if not symbol:
+                    continue
+                price = stock.get("price", 0)
+                change_pct = round(stock.get("changesPercentage", 0), 2)
+
+                old = _pulse_data.get(symbol, {})
+                old_price = old.get("price", 0)
+
+                if old_price and price > old_price:
+                    direction = "up"
+                elif old_price and price < old_price:
+                    direction = "down"
+                else:
+                    direction = "same"
+
+                _pulse_data[symbol] = {
+                    "symbol": symbol,
+                    "name": (stock.get("name") or "")[:25],
+                    "price": price,
+                    "change": round(stock.get("change", 0), 2),
+                    "change_pct": change_pct,
+                    "volume": stock.get("volume"),
+                    "direction": direction,
+                    "category": name,
+                    "updated": time.time(),
+                }
+        except Exception as e:
+            print(f"[pulse] {name} error: {e}")
+
+    _last_refresh = time.time()
+
+
+async def ensure_pulse_data(max_age_seconds: float = 15.0) -> None:
+    if _pulse_data and (time.time() - _last_refresh) <= max_age_seconds:
+        return
+    lock = _ensure_lock()
+    async with lock:
+        if _pulse_data and (time.time() - _last_refresh) <= max_age_seconds:
+            return
+        await _refresh_once()
+
+
 async def run_pulse():
     """Background loop — polls gainers/losers/active every 3 seconds."""
     global _pulse_running, _pulse_calls, _pulse_start
@@ -42,44 +107,7 @@ async def run_pulse():
 
     while True:
         try:
-            for name, method in [("gainers", _fmp.biggest_gainers), ("losers", _fmp.biggest_losers), ("active", _fmp.most_active)]:
-                try:
-                    data = await method()
-                    _pulse_calls += 1
-                    if not data:
-                        continue
-
-                    for stock in data:
-                        symbol = stock.get("symbol")
-                        if not symbol:
-                            continue
-                        price = stock.get("price", 0)
-                        change_pct = round(stock.get("changesPercentage", 0), 2)
-
-                        old = _pulse_data.get(symbol, {})
-                        old_price = old.get("price", 0)
-
-                        # Direction: up, down, or same vs last poll
-                        if old_price and price > old_price:
-                            direction = "up"
-                        elif old_price and price < old_price:
-                            direction = "down"
-                        else:
-                            direction = "same"
-
-                        _pulse_data[symbol] = {
-                            "symbol": symbol,
-                            "name": (stock.get("name") or "")[:25],
-                            "price": price,
-                            "change": round(stock.get("change", 0), 2),
-                            "change_pct": change_pct,
-                            "volume": stock.get("volume"),
-                            "direction": direction,
-                            "category": name,
-                            "updated": time.time(),
-                        }
-                except Exception as e:
-                    print(f"[pulse] {name} error: {e}")
+            await _refresh_once()
 
             # Publish SSE with full update
             await event_bus.publish("market_pulse", {

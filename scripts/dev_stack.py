@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import http.client
+import json
 import os
 import re
 import shutil
@@ -397,6 +398,57 @@ def check_sample_backend_custom_llm() -> tuple[bool, str]:
     return http_ok("http://localhost:8082/start-agent?profile=VIDEO&connect=false", timeout=20)
 
 
+def read_env_value(path: Path, key: str) -> str | None:
+    if not path.exists():
+        return None
+    for line in path.read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return None
+
+
+def verify_live_video_profile() -> None:
+    req = Request("http://localhost:8082/start-agent?profile=VIDEO&debug=1", method="GET")
+    with urlopen(req, timeout=30) as response:
+        data = json.loads(response.read().decode("utf-8"))
+
+    tts_params = (
+        data.get("debug", {})
+        .get("agent_payload", {})
+        .get("properties", {})
+        .get("tts", {})
+        .get("params", {})
+    )
+    avatar_params = (
+        data.get("debug", {})
+        .get("agent_payload", {})
+        .get("properties", {})
+        .get("avatar", {})
+        .get("params", {})
+    )
+
+    expected_voice_id = read_env_value(SAMPLE_ENV, "VIDEO_TTS_VOICE_ID")
+    expected_speed = read_env_value(SAMPLE_ENV, "VIDEO_TTS_SPEED")
+    expected_avatar_id = read_env_value(SAMPLE_ENV, "VIDEO_AVATAR_ID")
+
+    actual_voice_id = str(tts_params.get("voice_id", "")).strip()
+    actual_speed = str(tts_params.get("speed", "")).strip()
+    actual_avatar_id = str(avatar_params.get("avatar_id", "")).strip()
+
+    mismatches: list[str] = []
+    if expected_voice_id and actual_voice_id != expected_voice_id:
+        mismatches.append(f"voice_id expected {expected_voice_id} got {actual_voice_id}")
+    if expected_speed and actual_speed != expected_speed:
+        mismatches.append(f"speed expected {expected_speed} got {actual_speed}")
+    if expected_avatar_id and actual_avatar_id != expected_avatar_id:
+        mismatches.append(f"avatar_id expected {expected_avatar_id} got {actual_avatar_id}")
+
+    if mismatches:
+        raise RuntimeError("live_video_profile failed: " + "; ".join(mismatches))
+
+    print_line(f"live_video_profile: ok voice_id={actual_voice_id} speed={actual_speed} avatar_id={actual_avatar_id}")
+
+
 def verify_stack(tunnel_url: str) -> None:
     checks = [
         ("frontend", "http://localhost:3000"),
@@ -429,6 +481,8 @@ def verify_stack(tunnel_url: str) -> None:
     if not ok:
         raise RuntimeError(f"tunnel_chat_completions failed: {status}")
     print_line("tunnel_chat_completions: ok")
+
+    verify_live_video_profile()
 
 
 def do_up(*, restart: bool = False) -> None:

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["events"])
 
 
 @router.get("/events")
-async def events(limit: int = Query(default=50, le=200), type: str | None = None):
+async def events(limit: int = Query(default=100, le=500), type: str | None = None):
     return {"events": list_events(limit=limit, event_type=type)}
 
 

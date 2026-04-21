@@ -41,6 +41,7 @@ export default function Page() {
   const [helpScrollCommand, setHelpScrollCommand] = useState<{ direction: "up" | "down"; nonce: number } | null>(null);
   const [inboxScrollCommand, setInboxScrollCommand] = useState<{ direction: "up" | "down"; nonce: number } | null>(null);
   const [activeTab, setActiveTab] = useState<"earnings" | "ai" | "news">("earnings");
+  const [activeMarketTab, setActiveMarketTab] = useState<"open" | "all" | "gainers" | "losers" | "active">("open");
   const [chatRoleFilter, setChatRoleFilter] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState("");
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({});
@@ -146,6 +147,11 @@ export default function Page() {
       else if (a === "show_events" || a === "show_earnings") setActiveTab("earnings");
       else if (a === "show_recommendations" || a === "show_ai") setActiveTab("ai");
       else if (a === "show_news") setActiveTab("news");
+      else if (a === "show_open") setActiveMarketTab("open");
+      else if (a === "show_all") setActiveMarketTab("all");
+      else if (a === "show_gainers") setActiveMarketTab("gainers");
+      else if (a === "show_losers") setActiveMarketTab("losers");
+      else if (a === "show_active") setActiveMarketTab("active");
       else if (a === "open_settings") setSettingsOpen(true);
       else if (a === "close_settings") setSettingsOpen(false);
       else if (a === "open_help") setHelpOpen(true);
@@ -277,6 +283,7 @@ export default function Page() {
           {/* RIGHT: Market Lists */}
           <div className="column">
             <MarketLists positions={positions} activeSymbol={activeRec?.symbol} onSell={onSell}
+              activeTab={activeMarketTab} onTabChange={setActiveMarketTab}
               onSelectSymbol={(sym) => { const rec = recommendations.find((r) => r.symbol === sym); if (rec) void loadSubjectByRecommendation(rec.id); }} />
           </div>
         </div>

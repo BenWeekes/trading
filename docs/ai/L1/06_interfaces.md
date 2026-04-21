@@ -31,6 +31,12 @@ Strategy settings:
 - `GET /api/settings` — all settings merged with operator spec defaults
 - `PATCH /api/settings` — update one or more settings
 
+Discussion subjects:
+- `GET /api/subjects` — list subjects (optional `?subject_type=`)
+- `POST /api/subjects/resolve` — find or create subject; accepts `{ recommendation_id?, event_id?, trade_id?, linked_recommendation_id? }`; returns full subject detail
+- `GET /api/subjects/{id}` — subject detail with linked recommendation, event, trade, summary, and timeline
+- `POST /api/subjects/{id}/discuss` — subject-scoped chat with @role routing; routes to recommendation thread when linked, otherwise standalone trader turn
+
 Trader avatar / Agora:
 - `GET /api/trader/avatar/status`
 - `POST /api/trader/avatar/start` — two-phase: tokens then agent
@@ -52,7 +58,7 @@ System:
 - `recommendation_update` — status or direction changed
 - `position_update` — trade opened/closed
 - `cost_alert` — cost budget threshold
-- `voice_command` — trader avatar action (navigate, execute, reject, approve); payload includes `action` and `recommendation_id`
+- `voice_command` — trader avatar action; `action` values: navigate, execute, reject, approve, sell, open_event, scroll_up, scroll_down, filter_chat, open_settings, open_help; payload includes `action`, optional `recommendation_id`, `event_id`, `symbol`
 - `system` — scan status, analysis errors
 
 ## Key object shapes
@@ -64,9 +70,14 @@ System:
 - `position_size_shares`, `position_size_dollars`
 
 `RoleMessage`
-- `id`, `role`, `sender`, `symbol`, `recommendation_id`
+- `id`, `role`, `sender`, `symbol`, `recommendation_id`, `discussion_subject_id`
 - `message_text`, `structured_payload`
 - `provider`, `model_used`, `input_tokens`, `output_tokens`, `cost_usd`
+
+`DiscussionSubject`
+- `id`, `subject_type` (news | earnings | recommendation | position | price_move)
+- `symbol`, `event_id`, `recommendation_id`, `trade_id`
+- `headline`, `summary`, `status`, `created_at`, `updated_at`
 
 `Position / Trade`
 - `id`, `symbol`, `direction`, `entry_price`, `current_price`, `shares`
